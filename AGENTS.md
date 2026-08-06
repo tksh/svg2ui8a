@@ -16,14 +16,14 @@ references them. Do not pre-emptively read every markdown file in
 
 This is a Deno-first web application with the following moving parts:
 
-- Runtime: **Deno** (no Node.js in production; npm packages are pulled
-  in via `npm:` specifiers or `deno.lock` resolution).
+- Runtime: **Deno** (no Node.js in production).
 - Build: **`deno bundle`** for the browser bundle; Deno Deploy for the
   serverless side.
 - A planned dynamic OGP image feature, served from Deno Deploy.
-- An in-progress SVG-to-raster rendering pipeline, built on top of
-  `usvg` / `resvg`. See `./docs/project-constitution.md` for why and
-  `./docs/system-architecture.md` for what.
+- An in-progress SVG-to-raster rendering pipeline, packaged as the
+  JSR module `@your-org/svg2ui8a`. See `./docs/project-constitution.md`
+  for what the package is and is not, and
+  `./docs/system-architecture.md` for the layout and data flow.
 
 The current task is the `svg2ui8a` package. Other tasks will follow.
 This file's guidance applies to all of them; the docs in `./docs/`
@@ -80,6 +80,8 @@ layer has been read.
 
 - Files unrelated to the current task. Do not browse the repository
   beyond what the plan requires.
+- Anything under `./notes/` — that is the human's personal design
+  scratchpad, not project documentation.
 - Build artifacts, `node_modules/`, `_build/`, `dist/`, lock files
   beyond what is needed.
 
@@ -110,14 +112,45 @@ re-debate their choices.
 
 ## 5. Dependency policy
 
-- Deno-native modules from `deno.land/x` and `esm.sh` are preferred.
-- npm packages are allowed when no Deno-native equivalent exists, or
-  when the user explicitly requests an npm package.
-- A package may be added during planning only if the plan justifies it
-  in the "Dependency changes" section. The human must approve.
-- Wasm binaries that the Rust side produces must be vendored as static
-  assets, not loaded from a CDN at runtime, unless the human explicitly
-  approves a CDN load.
+The package's value proposition includes **predictability of supply**:
+the consumer must be able to build, test, and ship without depending
+on the uptime, the bandwidth, or the terms of any third-party CDN.
+
+### 5.1 Source of dependencies, in order of preference
+
+1. **JSR (`jsr:` specifier).** Preferred. JSR is the canonical Deno
+   package registry, versioned, content-addressable, and supports
+   subpath imports.
+2. **Local / vendored.** A dependency that is not on JSR must be
+   vendored into the repository under `./vendor/` (or a similarly
+   named directory) and imported via a relative path or a `deno.json`
+   import map entry that points at the vendored copy.
+3. **`deno.land/x` and `esm.sh`.** Permitted only as a fallback when
+   neither (1) nor (2) is viable. When used, the dependency must
+   still be vendored locally before any production build; the
+   `deno.land/x` / `esm.sh` URL exists for discovery and initial
+   bootstrap, not for runtime fetching.
+
+### 5.2 Runtime CDN imports are forbidden
+
+The browser bundle must not import dependencies from
+`https://deno.land/x/...`, `https://esm.sh/...`, or any other
+runtime CDN at the moment the bundle is loaded by a user. The bundle
+must contain every byte it needs to run.
+
+Rationale: a third-party CDN going down, rotating their signing key,
+or changing their caching policy must not be a cause of our users
+seeing a broken page. The bundle is a self-contained artifact.
+
+If a dependency cannot be vendored for a technical reason, that is
+a hard blocker. Stop and escalate per §10.
+
+### 5.3 Adding a dependency
+
+A package may be added during planning only if the plan justifies it
+in the "Dependency changes" section. The justification must name
+the source tier (1, 2, or 3 above) and the vendoring strategy. The
+human must approve.
 
 ---
 
@@ -140,11 +173,14 @@ re-debate their choices.
 
 - One logical change per commit.
 - Commit messages reference the section of the plan they implement,
-  e.g. `svg2ui8a: split Wasm build into usvg and renderer artifacts`.
+  e.g. `svg2ui8a: add usvg2rgba subpath export`.
 - Do not force-push, do not rebase other people's work, do not amend
   commits that have been pushed.
-- Do not commit `dist/`, `node_modules/`, `_build/`, `target/`, or any
-  other generated artifact. Check `.gitignore` first if unsure.
+- Do not commit `dist/`, `node_modules/`, `_build/`, `target/`,
+  `vendor/`, or any other generated or vendored artifact, **except**
+  the Wasm binaries that the project explicitly vendors (see
+  `./docs/engineering-playbook.md`). Check `.gitignore` first if
+  unsure.
 
 ---
 
@@ -155,6 +191,8 @@ These are hard limits that apply regardless of what the plan says.
 - Do not modify any file under `./docs/` (this file, or any of the
   `docs/*.md` files). The human owns the documentation. If something
   is wrong, the human will edit it.
+- Do not read or modify anything under `./notes/`. That is the
+  human's personal design scratchpad, not project documentation.
 - Do not introduce a custom binary serialization format. The
   serialization is `postcard` and is fixed.
 - Do not add fonts or font-handling code. The project has a hard
@@ -167,6 +205,10 @@ These are hard limits that apply regardless of what the plan says.
   Wasm.
 - Do not add a Node.js-only runtime fallback. Deno is the only
   supported runtime.
+- Do not introduce a runtime CDN import in the browser bundle. See
+  §5.2.
+- Do not bundle `svg2usvg` and `usvg2rgba` into a single Wasm
+  artifact. They are two separate builds, on purpose.
 - Do not run `git push` without explicit human approval.
 - Do not merge a PR you opened. The human merges.
 
@@ -201,5 +243,6 @@ Stop and ask the human if:
 - A design question arises that the human has not yet answered (e.g.
   a target JS bundler, a specific Deno version, a specific Wasm
   target).
+- A dependency cannot be vendored, blocking §5.2.
 
 Do not guess. Do not push through. Ask.
