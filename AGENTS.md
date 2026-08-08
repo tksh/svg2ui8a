@@ -14,20 +14,26 @@ references them. Do not pre-emptively read every markdown file in
 
 ## 1. Project at a glance
 
-This is a Deno-first web application with the following moving parts:
+This repository hosts the JSR package **`@tksh/svg2ui8a`**: a Wasm
+SVG-processing toolkit whose inputs and outputs are all
+`Uint8Array`. The package has two functions, in two subpath imports:
 
-- Runtime: **Deno** (no Node.js in production).
-- Build: **`deno bundle`** for the browser bundle; Deno Deploy for the
-  serverless side.
-- A planned dynamic OGP image feature, served from Deno Deploy.
-- An in-progress SVG-to-raster rendering pipeline, packaged as the
-  JSR module `@your-org/svg2ui8a`. See `./docs/project-constitution.md`
-  for what the package is and is not, and
-  `./docs/system-architecture.md` for the layout and data flow.
+- `jsr:@tksh/svg2ui8a/usvg` → `svg2usvg(svg): Promise<Uint8Array>`
+- `jsr:@tksh/svg2ui8a/rgba` → `usvg2rgba(usvg, options?): Promise<RgbaResult>`
 
-The current task is the `svg2ui8a` package. Other tasks will follow.
-This file's guidance applies to all of them; the docs in `./docs/`
-are specific to their respective concerns.
+There is no web application in this repository, no Deno Deploy
+wiring, and no app-side routing. The web-application context is
+background for *why* the package exists; the package is the only
+thing this repository ships.
+
+See:
+
+- `./docs/project-constitution.md` for what the package is and is
+  not.
+- `./docs/system-architecture.md` for the package layout and data
+  flow.
+- `./docs/engineering-playbook.md` for how to build, test, and
+  ship.
 
 ---
 
@@ -40,7 +46,9 @@ Concretely:
 
 - **Plan before you act.** For any task that touches more than one
   file, or that touches a non-trivial function, produce a written plan
-  first. Save it under `./docs/` and wait for the human to approve.
+  first. Save it under `./docs/plans/` and wait for the human to
+  approve. Plans are exempt from the "no editing `./docs/`" rule
+  (§8) — they are working artifacts, not governing documents.
 - **Smallest possible diff.** Do not refactor, rename, or "improve"
   code that is not directly in scope.
 - **No new dependencies without justification.** If you want to add a
@@ -61,10 +69,10 @@ Concretely:
 
 - `./AGENTS.md` (this file) — **always, at the start of every task.**
 
-### Read in this order, when the task is about `svg2ui8a`
+### Read in this order, when the task is about the package
 
 1. `./AGENTS.md` (this file) — your role and the rules.
-2. `./docs/project-constitution.md` — what `svg2ui8a` is and is not.
+2. `./docs/project-constitution.md` — what the package is and is not.
 3. `./docs/system-architecture.md` — the package layout and data flow.
 4. `./docs/engineering-playbook.md` — how to build, test, and ship.
 
@@ -74,7 +82,10 @@ layer has been read.
 ### Read only when the task references it
 
 - Any other file under `./docs/` — read only when the human explicitly
-  references it, or when the task description names it.
+  references it, or when the task description names it. This includes
+  `docs/open-questions-answers.md` (a resolution log, not current
+  policy) and `docs/plans/<feature>.md` (only when the task is to
+  execute a specific plan).
 
 ### Never read
 
@@ -101,9 +112,10 @@ re-debate their choices.
 - **Async functions return `Promise<T>`.** Sync functions return `T`.
   No `// @ts-ignore`, no `any` to escape type errors. If a type error
   is real, fix the types.
-- **Formatting is non-negotiable.** Run `deno fmt` before declaring
-  done. If `deno fmt` would change lines you did not edit, leave them
-  alone — only run the formatter on lines you changed.
+- **Formatting is non-negotiable.** The agent formats the files it
+  has changed. If `deno fmt` would change lines the agent did not
+  touch, those lines are left alone (revert any incidental changes
+  before committing).
 - **Comments explain *why*, not *what*.** The code shows *what*.
 - **No new top-level files unless the plan calls for one.** The
   human-approved plan is the authority for what files exist.
@@ -131,6 +143,9 @@ on the uptime, the bandwidth, or the terms of any third-party CDN.
    `deno.land/x` / `esm.sh` URL exists for discovery and initial
    bootstrap, not for runtime fetching.
 
+`npm:` specifiers are not allowed in the package code. They are a
+consumer-side concern, not a package concern.
+
 ### 5.2 Runtime CDN imports are forbidden
 
 The browser bundle must not import dependencies from
@@ -156,16 +171,18 @@ human must approve.
 
 ## 6. Testing
 
-- The project's test command is `deno task test` (or whatever the
-  current `deno.json` defines — check first; do not assume).
+- The project's test command is `deno task test`, which orchestrates
+  `cargo test`, `wasm-pack test`, and `deno test`. See
+  `./docs/engineering-playbook.md` §1 for the exact orchestration.
 - For Rust code, run `cargo test` (and `cargo test --target
   wasm32-unknown-unknown` if Wasm is involved).
-- Visual / pixel-equality tests, if any, must be reviewed by the
-  human before being marked passing. Do not auto-approve pixel diffs.
-- The PNG IHDR-only size helper from
-  `./docs/engineering-playbook.md` is the prescribed approach for
-  reading image dimensions. Do not introduce a PNG decoder dependency
-  for this.
+- Visual / pixel-equality tests on PNG output, if any, must be
+  reviewed by the human before being marked passing. **Byte-level
+  RGBA buffer tests** (asserting the contents of `RgbaResult.pixels`
+  against a known-good output) are unit tests; they do not require
+  human review.
+- This package produces RGBA pixels, not PNG. PNG encoding is the
+  consumer's concern.
 
 ---
 
@@ -178,9 +195,11 @@ human must approve.
   commits that have been pushed.
 - Do not commit `dist/`, `node_modules/`, `_build/`, `target/`,
   `vendor/`, or any other generated or vendored artifact, **except**
-  the Wasm binaries that the project explicitly vendors (see
-  `./docs/engineering-playbook.md`). Check `.gitignore` first if
-  unsure.
+  the Wasm binaries that the project explicitly vendors: the
+  post-build `assets/*.wasm` files. Intermediate `crates/*/pkg/`
+  is not committed. `vendor/` is not committed except as part of a
+  release snapshot (see `./docs/engineering-playbook.md` §5.1).
+  Check `.gitignore` first if unsure.
 
 ---
 
@@ -188,9 +207,17 @@ human must approve.
 
 These are hard limits that apply regardless of what the plan says.
 
-- Do not modify any file under `./docs/` (this file, or any of the
-  `docs/*.md` files). The human owns the documentation. If something
-  is wrong, the human will edit it.
+- Do not modify the **four governing documents**:
+  - `AGENTS.md` (this file)
+  - `docs/project-constitution.md`
+  - `docs/system-architecture.md`
+  - `docs/engineering-playbook.md`
+
+  The human owns the documentation. If something is wrong, the
+  human will edit it. Plans under `docs/plans/` and resolution
+  logs (e.g. `docs/open-questions-answers.md`) are exempt from
+  this rule — they are working artifacts.
+
 - Do not read or modify anything under `./notes/`. That is the
   human's personal design scratchpad, not project documentation.
 - Do not introduce a custom binary serialization format. The
@@ -199,8 +226,9 @@ These are hard limits that apply regardless of what the plan says.
   constraint of no fonts.
 - Do not add BBox-related code. The project does not use BBox.
 - Do not add a PNG decoder package (`pngjs`, `sharp`,
-  `@jsquash/png`, etc.) solely to read image dimensions. Use the
-  IHDR helper.
+  `@jsquash/png`, etc.) for any reason in this package. RGBA
+  output is the package's contract; PNG / WebP / image-format
+  encoding is the consumer's.
 - Do not add a native `resvg` fallback. The project is committed to
   Wasm.
 - Do not add a Node.js-only runtime fallback. Deno is the only
@@ -237,12 +265,16 @@ Stop and ask the human if:
   or the codebase.
 - A real type error cannot be fixed without a design decision.
 - A test fails and the cause is not obvious from the diff.
-- The plan would require modifying `AGENTS.md` or any `./docs/*.md`.
+- The plan would require modifying any of the four governing
+  documents.
 - A new dependency seems necessary.
 - The task expands beyond what the user originally asked for.
 - A design question arises that the human has not yet answered (e.g.
   a target JS bundler, a specific Deno version, a specific Wasm
   target).
 - A dependency cannot be vendored, blocking §5.2.
+- The `usvg::Tree` ↔ `postcard` round-trip test (see
+  `./docs/engineering-playbook.md` §3.1) fails, because that is
+  the only blocking technical assumption in the project.
 
 Do not guess. Do not push through. Ask.

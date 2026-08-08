@@ -1,4 +1,4 @@
-# System Architecture: `svg2ui8a`
+# System Architecture: `@tksh/svg2ui8a`
 
 This file is the **third** document an AI agent reads (after
 `AGENTS.md` and `docs/project-constitution.md`). It describes the
@@ -11,37 +11,59 @@ wrong, the agent must surface the issue, not rewrite the file.
 
 ## 1. Package layout
 
-`svg2ui8a` is a single JSR package. Internally it is a workspace
-with two Rust crates and two TypeScript entry points:
+`@tksh/svg2ui8a` is a single JSR package. Internally it is a Cargo
+workspace with two crates and a TypeScript wrapper layer:
 
 ```
 svg2ui8a/
-├── jsr.json
+├── AGENTS.md
+├── CHANGELOG.md
 ├── README.md
 ├── LICENSE
-├── deno.json                    # Deno tasks, fmt config, lint config
+├── Cargo.toml                  # workspace root, pins shared deps
+├── jsr.json
+├── deno.json
+├── .gitignore
 ├── src/
-│   ├── mod.ts                   # Re-exports the two subpaths
-│   ├── usvg.ts                  # TS wrapper for the usvg Wasm
-│   └── rgba.ts                  # TS wrapper for the rgba Wasm
+│   ├── mod.ts
+│   ├── usvg.ts
+│   └── rgba.ts
 ├── crates/
-│   ├── svg2usvg/                # Wasm crate, usvg only
+│   ├── svg2usvg/
 │   │   ├── Cargo.toml
-│   │   ├── src/lib.rs
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   └── core.rs        # non-bindgen core
 │   │   └── tests/
-│   └── usvg2rgba/               # Wasm crate, usvg + resvg only
+│   └── usvg2rgba/
 │       ├── Cargo.toml
-│       ├── src/lib.rs
+│       ├── src/
+│       │   ├── lib.rs
+│       │   └── core.rs        # non-bindgen core
 │       └── tests/
-└── assets/
-    ├── svg2usvg_bg.wasm         # Built artifact, vendored
-    └── usvg2rgba_bg.wasm        # Built artifact, vendored
+├── assets/
+│   ├── svg2usvg_bg.wasm
+│   └── usvg2rgba_bg.wasm
+├── scripts/
+│   ├── build.ts
+│   ├── vendor.ts
+│   └── check-cdn-free.ts
+├── tests/                     # Deno integration tests
+├── docs/
+│   ├── project-constitution.md
+│   ├── system-architecture.md
+│   ├── engineering-playbook.md
+│   ├── open-questions.md
+│   └── open-questions-answers.md
+├── docs/plans/                # working artifacts (agent-writable)
+└── vendor/                    # gitignored except in release snapshots
 ```
 
-The two Rust crates are **fully independent**. They share no source
-files, no test code, and no build script. The only thing they share
-is the `usvg` upstream crate as a dependency, and that is a
-zero-cost transitive link.
+The two Rust crates are **fully independent**. They share no
+source files, no test code, and no build script. They share only
+the workspace-pinned versions of `usvg` and `postcard`, sourced
+from the root `Cargo.toml`'s `[workspace.dependencies]` table.
+Drift between producer and consumer is structurally impossible.
 
 The two TS wrappers are also fully independent. They each import
 their own Wasm binary, manage their own `init()` flag, and export
@@ -51,23 +73,24 @@ their own function.
 
 ## 2. JSR subpath exports
 
-`svg2ui8a` exposes the following subpaths:
+The package exposes the following subpaths:
 
-| Subpath         | What it loads                          | Wasm size |
-|-----------------|----------------------------------------|-----------|
-| `svg2ui8a`      | Re-exports both `./usvg` and `./rgba` | (sum)     |
-| `svg2ui8a/usvg` | `svg2usvg` only                       | Small     |
-| `svg2ui8a/rgba` | `usvg2rgba` only                      | Larger    |
+| Subpath                | What it loads                            | Wasm size |
+|------------------------|------------------------------------------|-----------|
+| `@tksh/svg2ui8a`       | Re-exports both `./usvg` and `./rgba`    | (sum)     |
+| `@tksh/svg2ui8a/usvg`  | `svg2usvg` only                          | Small     |
+| `@tksh/svg2ui8a/rgba`  | `usvg2rgba` only                         | Larger    |
 
-Importing the root re-exports everything; importing a subpath
-imports only that subpath's Wasm. The bundler is expected to
-tree-shake whichever subpath is not used.
+**Subpath imports are the supported way to load a single Wasm
+artifact.** The root import is a convenience for consumers who
+want both; it does not enable any tree-shaking that the subpath
+imports would not already enable.
 
 `jsr.json` example:
 
 ```json
 {
-  "name": "@your-org/svg2ui8a",
+  "name": "@tksh/svg2ui8a",
   "version": "0.1.0",
   "exports": {
     ".": "./src/mod.ts",
@@ -83,7 +106,9 @@ tree-shake whichever subpath is not used.
 {
   "tasks": {
     "build": "deno run -A scripts/build.ts",
-    "test": "deno test -A",
+    "test": "deno task test:rust && deno task test:wasm && deno test -A",
+    "test:rust": "cd crates/svg2usvg && cargo test && cd ../usvg2rgba && cargo test",
+    "test:wasm": "deno run -A scripts/test-wasm.ts",
     "fmt": "deno fmt",
     "lint": "deno lint",
     "check": "deno check src/**/*.ts"
@@ -106,19 +131,21 @@ tree-shake whichever subpath is not used.
 
 ```ts
 // Cache key only — load the usvg Wasm, do not load the rasterizer
-import { svg2usvg } from "jsr:@your-org/svg2ui8a/usvg";
+import { svg2usvg } from "jsr:@tksh/svg2ui8a/usvg";
 
-// Already have a cached usvg payload — load the rgba Wasm, do not
-// load the SVG parser
-import { usvg2rgba } from "jsr:@your-org/svg2ui8a/rgba";
+// Already have a cached usvg payload — load the rgba Wasm,
+// do not load the SVG parser
+import { usvg2rgba } from "jsr:@tksh/svg2ui8a/rgba";
 
 // Both — load both Wasm artifacts
-import { svg2usvg, usvg2rgba } from "jsr:@your-org/svg2ui8a";
+import { svg2usvg, usvg2rgba } from "jsr:@tksh/svg2ui8a";
 ```
 
 ---
 
 ## 3. The two Wasm builds
+
+Both crates pin `usvg` and `postcard` via the workspace.
 
 ### 3.1 `svg2usvg` (the producer)
 
@@ -133,17 +160,17 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-usvg = "0.34"
-postcard = "1.0"
+usvg = { workspace = true }
+postcard = { workspace = true }
+serde = { workspace = true }
 wasm-bindgen = "0.2"
-serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
 ```
 
-Dependencies: `usvg`, `postcard`, `wasm-bindgen`, `serde`. That is
-all. No `resvg`, no `tiny-skia`, no `png`, no `image`.
+Dependencies: `usvg`, `postcard`, `serde`, `wasm-bindgen`. That
+is all. No `resvg`, no `tiny-skia`, no `png`, no `image`.
 
 **Why so small**: the work is just SVG parse (`usvg`) and Tree
 serialize (`postcard`). No geometry walk, no pixel allocation, no
@@ -162,12 +189,13 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-usvg = "0.34"
-postcard = "1.0"
+usvg = { workspace = true }
+postcard = { workspace = true }
 resvg = "0.34"
 tiny-skia = "0.11"
+serde = { workspace = true }
+serde-wasm-bindgen = "0.6"
 wasm-bindgen = "0.2"
-serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
@@ -176,6 +204,9 @@ wasm-bindgen-test = "0.3"
 Dependencies include `resvg` and `tiny-skia` because the work is
 **Tree → RGBA pixels**. There is no PNG encoder. The output is
 raw RGBA, period.
+
+`serde-wasm-bindgen` is required to decode the JS-side
+`Usvg2RgbaOptions` object into a Rust struct.
 
 ### 3.3 Why two builds
 
@@ -188,108 +219,212 @@ different cost profiles:
   roughly 2.5–3x smaller than the `rgba` Wasm.
 - A consumer who already has a cached `usvg` payload (e.g. on a
   hot path where 99% of requests hit the cache) should never
-  pay for the SVG parser. The `rgba` Wasm is meaningfully smaller
-  and starts faster than the `usvg` Wasm.
+  pay for the SVG parser. The `rgba` Wasm is meaningfully
+  smaller and starts faster than the `usvg` Wasm.
 
 A single Wasm with both functions would force every consumer to
 load both code paths. That violates
 `docs/project-constitution.md` §3.9.
 
+### 3.4 Workspace pin
+
+```toml
+# Cargo.toml (workspace root)
+[workspace]
+members = ["crates/svg2usvg", "crates/usvg2rgba"]
+resolver = "2"
+
+[workspace.dependencies]
+usvg = "0.34"
+postcard = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+```
+
+Both crates reference these via `{ workspace = true }`. There is
+exactly one place to bump the `usvg` or `postcard` version.
+
 ---
 
 ## 4. The Rust APIs
 
-### 4.1 `crates/svg2usvg/src/lib.rs`
+### 4.1 `crates/svg2usvg/src/lib.rs` and `core.rs`
 
 ```rust
+// crates/svg2usvg/src/core.rs
 use usvg::Tree;
-use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen]
-pub fn svg2usvg(svg: &str) -> Result<Vec<u8>, JsError> {
-    let tree = Tree::from_str(svg, &usvg::Options::default())
-        .map_err(|e| JsError::new(&format!("usvg parse error: {e}")))?;
+pub fn svg2usvg_core(svg: &str) -> Result<Vec<u8>, Svg2UsvgError> {
+    let tree = Tree::from_str(svg, &usvg::Options::default())?;
+    postcard::to_stdvec(&tree).map_err(Svg2UsvgError::from)
+}
 
-    postcard::to_stdvec(&tree)
-        .map_err(|e| JsError::new(&format!("postcard encode error: {e}")))
+#[derive(Debug, thiserror::Error)]
+pub enum Svg2UsvgError {
+    #[error("usvg parse error: {0}")]
+    Usvg(String),
+    #[error("postcard encode error: {0}")]
+    Postcard(String),
 }
 ```
 
-That is the entire file.
+```rust
+// crates/svg2usvg/src/lib.rs
+use wasm_bindgen::prelude::*;
+use crate::core::{svg2usvg_core, Svg2UsvgError};
 
-### 4.2 `crates/usvg2rgba/src/lib.rs`
+#[wasm_bindgen]
+pub fn svg2usvg(svg: &str) -> Result<Vec<u8>, JsError> {
+    svg2usvg_core(svg).map_err(|e| JsError::new(&e.to_string()))
+}
+```
+
+The `core` function is what `cargo test` exercises. The
+`#[wasm_bindgen]` wrapper is what the Wasm tests exercise.
+
+### 4.2 `crates/usvg2rgba/src/lib.rs` and `core.rs`
 
 ```rust
+// crates/usvg2rgba/src/core.rs
 use serde::Deserialize;
 use usvg::Tree;
-use wasm_bindgen::prelude::*;
 
-#[derive(Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct RgbaOptions {
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub alpha_mode: Option<AlphaMode>,
 }
 
-#[wasm_bindgen]
-pub struct RgbaResult {
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AlphaMode {
+    Straight,
+    Premultiplied,
+}
+
+impl Default for AlphaMode {
+    fn default() -> Self { AlphaMode::Straight }
+}
+
+pub struct RgbaResultCore {
     pub pixels: Vec<u8>,
     pub width: u32,
     pub height: u32,
+    pub alpha_mode: AlphaMode,
 }
 
-#[wasm_bindgen]
-impl RgbaResult {
-    #[wasm_bindgen(getter)]
-    pub fn pixels(&self) -> Vec<u8> {
-        self.pixels.clone()
-    }
-    // ... getters for width and height ...
+#[derive(Debug, thiserror::Error)]
+pub enum Usvg2RgbaError {
+    #[error("postcard decode error: {0}")]
+    Postcard(String),
+    #[error("pixmap allocation failed (width={0}, height={1})")]
+    Allocation(u32, u32),
+    #[error("invalid dimensions: width={0}, height={1}")]
+    Dimensions(u32, u32),
+    #[error("svg natural size is zero")]
+    ZeroNaturalSize,
 }
 
-#[wasm_bindgen]
-pub fn usvg2rgba(
+pub fn usvg2rgba_core(
     usvg_bytes: &[u8],
-    options: Option<JsValue>,
-) -> Result<JsValue, JsError> {
+    opts: &RgbaOptions,
+) -> Result<RgbaResultCore, Usvg2RgbaError> {
     let tree: Tree = postcard::from_bytes(usvg_bytes)
-        .map_err(|e| JsError::new(&format!("postcard decode error: {e}")))?;
-
-    let opts: RgbaOptions = match options {
-        Some(v) => serde_wasm_bindgen::from_value(v)
-            .map_err(|e| JsError::new(&format!("options decode error: {e}")))?,
-        None => RgbaOptions { width: None, height: None },
-    };
+        .map_err(|e| Usvg2RgbaError::Postcard(e.to_string()))?;
 
     let natural = tree.size();
+    if natural.width() <= 0.0 || natural.height() <= 0.0 {
+        return Err(Usvg2RgbaError::ZeroNaturalSize);
+    }
+
     let width = opts.width.unwrap_or(natural.width() as u32);
     let height = opts.height.unwrap_or(natural.height() as u32);
+    if width == 0 || height == 0 {
+        return Err(Usvg2RgbaError::Dimensions(width, height));
+    }
 
     let mut pixmap = tiny_skia::Pixmap::new(width, height)
-        .ok_or_else(|| JsError::new("pixmap allocation failed"))?;
+        .ok_or(Usvg2RgbaError::Allocation(width, height))?;
 
+    // Render the tree into the pixmap.
+    // Exact API: resvg::render(&tree, transform, &mut pixmap.as_mut())
+    // (or a method on Tree, depending on resvg version).
+    // The implementation task confirms the exact shape.
+    // PLACEHOLDER — see engineering-playbook §3.2 for the
+    // required test that exercises this path.
     let transform = tiny_skia::Transform::from_scale(
         width as f32 / natural.width() as f32,
         height as f32 / natural.height() as f32,
     );
+    // TODO: actual resvg::render call (confirmed at impl time)
+    let _ = (&tree, transform, &mut pixmap);
 
-    tree.render(transform, &mut pixmap.as_mut());
+    let pixels = match opts.alpha_mode.unwrap_or_default() {
+        AlphaMode::Straight => unpremultiply(pixmap.data()),
+        AlphaMode::Premultiplied => pixmap.data().to_vec(),
+    };
 
-    Ok(/* serialized RgbaResult */)
+    Ok(RgbaResultCore {
+        pixels,
+        width,
+        height,
+        alpha_mode: opts.alpha_mode.unwrap_or_default(),
+    })
+}
+
+fn unpremultiply(pixmap_data: &[u8]) -> Vec<u8> {
+    let mut out = pixmap_data.to_vec();
+    for chunk in out.chunks_exact_mut(4) {
+        let a = chunk[3] as u32;
+        if a == 0 {
+            chunk[0] = 0; chunk[1] = 0; chunk[2] = 0;
+        } else {
+            chunk[0] = ((chunk[0] as u32 * 255) / a).min(255) as u8;
+            chunk[1] = ((chunk[1] as u32 * 255) / a).min(255) as u8;
+            chunk[2] = ((chunk[2] as u32 * 255) / a).min(255) as u8;
+        }
+    }
+    out
 }
 ```
 
-The exact structure of the return value is decided during
-implementation; the only contract is what is in
-`docs/project-constitution.md` §4.2.
+```rust
+// crates/usvg2rgba/src/lib.rs
+use serde::Deserialize;
+use wasm_bindgen::prelude::*;
+use crate::core::{usvg2rgba_core, RgbaOptions, RgbaResultCore, Usvg2RgbaError};
+
+#[wasm_bindgen]
+pub fn usvg2rgba(usvg_bytes: &[u8], options: Option<JsValue>) 
+    -> Result<JsValue, JsError> {
+    let opts: RgbaOptions = match options {
+        Some(v) => serde_wasm_bindgen::from_value(v)
+            .map_err(|e| JsError::new(&e.to_string()))?,
+        None => RgbaOptions::default(),
+    };
+    let core = usvg2rgba_core(usvg_bytes, &opts)
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(/* serialize RgbaResultCore to JsValue */)
+}
+```
+
+The `JsValue` returned by the `#[wasm_bindgen]` wrapper is an
+**implementation detail**. The public TypeScript contract is
+`RgbaResult` (see `docs/project-constitution.md` §4.2). The
+wrapper may serialize via `serde_wasm_bindgen::to_value`, a
+hand-built `js_sys::Object`, or any other internal mechanism;
+that choice is not part of the API. The implementation task
+selects the simplest correct approach.
 
 ---
 
 ## 5. The TypeScript surfaces
 
-### 5.1 `src/usvg.ts` (auto-generated wrapper, then committed)
+### 5.1 `src/usvg.ts` (template-shaped, committed)
 
 ```ts
-// Do not hand-edit. Re-run scripts/build.ts to regenerate.
+// Template-shaped by scripts/build.ts. The agent regenerates,
+// never hand-edits.
 import init, { svg2usvg as svg2usvgRaw } from "../assets/svg2usvg_bg.wasm";
 
 let initialized = false;
@@ -306,10 +441,17 @@ export async function svg2usvg(svg: string): Promise<Uint8Array> {
 }
 ```
 
-### 5.2 `src/rgba.ts` (auto-generated wrapper, then committed)
+The committed `src/usvg.ts` imports the **raw `.wasm` artifact**
+that was copied to `assets/`. The `wasm-pack`-generated
+`pkg/svg2usvg.js` glue is an intermediate that the build script
+consumes; it is **not** committed and **not** imported directly
+by the published wrapper.
+
+### 5.2 `src/rgba.ts` (template-shaped, committed)
 
 ```ts
-// Do not hand-edit. Re-run scripts/build.ts to regenerate.
+// Template-shaped by scripts/build.ts. The agent regenerates,
+// never hand-edits.
 import init, { usvg2rgba as usvg2rgbaRaw } from "../assets/usvg2rgba_bg.wasm";
 
 let initialized = false;
@@ -320,15 +462,19 @@ async function ensureInit(): Promise<void> {
   initialized = true;
 }
 
+export type AlphaMode = "straight" | "premultiplied";
+
 export interface Usvg2RgbaOptions {
   width?: number;
   height?: number;
+  alphaMode?: AlphaMode;
 }
 
 export interface RgbaResult {
   pixels: Uint8Array;
   width: number;
   height: number;
+  alphaMode: AlphaMode;
 }
 
 export async function usvg2rgba(
@@ -344,7 +490,12 @@ export async function usvg2rgba(
 
 ```ts
 export { svg2usvg } from "./usvg.ts";
-export { usvg2rgba, type Usvg2RgbaOptions, type RgbaResult } from "./rgba.ts";
+export {
+  usvg2rgba,
+  type AlphaMode,
+  type Usvg2RgbaOptions,
+  type RgbaResult,
+} from "./rgba.ts";
 ```
 
 The agent must **not** hand-edit any file under `src/` that is
@@ -361,7 +512,7 @@ update the build script.
 ┌─────────────────────────────────────────────────────────────────┐
 │ Consumer code (Deno / browser)                                   │
 │                                                                  │
-│   import { svg2usvg } from "jsr:@your-org/svg2ui8a/usvg";       │
+│   import { svg2usvg } from "jsr:@tksh/svg2ui8a/usvg";           │
 │                                                                  │
 │   const bytes = await svg2usvg(svgString);                       │
 └──────────────────────────────┬───────────────────────────────────┘
@@ -401,7 +552,7 @@ no JSON, no SVG string, no pixel buffer.
 ┌─────────────────────────────────────────────────────────────────┐
 │ Consumer code                                                    │
 │                                                                  │
-│   import { usvg2rgba } from "jsr:@your-org/svg2ui8a/rgba";      │
+│   import { usvg2rgba } from "jsr:@tksh/svg2ui8a/rgba";          │
 │                                                                  │
 │   const { pixels, width, height } = await usvg2rgba(            │
 │     usvgBytes,                                                   │
@@ -419,14 +570,17 @@ no JSON, no SVG string, no pixel buffer.
 │      - returns: usvg::Tree                                       │
 │                                                                  │
 │   3. tiny_skia::Pixmap::new(width, height)                      │
-│      - allocate RGBA buffer                                      │
+│      - allocate RGBA buffer, zero-initialized                    │
 │                                                                  │
 │   4. tree.render(transform, &mut pixmap)                         │
 │      - walk the tree                                             │
 │      - draw each node                                            │
 │      - write to pixmap.pixels()                                  │
 │                                                                  │
-│   5. wasm-bindgen: pixmap.pixels() → Uint8Array (one memcpy)    │
+│   5. (if alphaMode == "straight") unpremultiply                 │
+│      (if alphaMode == "premultiplied") skip                      │
+│                                                                  │
+│   6. wasm-bindgen: pixmap.pixels() → Uint8Array (one memcpy)    │
 └──────────────────────────────┬───────────────────────────────────┘
                                │ Uint8Array (RGBA bytes, w*h*4)
                                ▼
@@ -440,10 +594,10 @@ no JSON, no SVG string, no pixel buffer.
 ```
 
 The Wasm boundary is crossed **twice** (in, then out), with a
-single memcpy each way. The pixmap is allocated and drawn entirely
-inside Wasm.
+single memcpy each way. The pixmap is allocated and drawn
+entirely inside Wasm.
 
-### 6.3 End-to-end: SVG in, RGBA out
+### 6.3 End-to-end (consumer-side)
 
 ```
 SVG string
@@ -453,7 +607,7 @@ usvg bytes (Uint8Array)
    │
    ▼  [hash + cache lookup]
    │
-   ├─ HIT  → return cached RGBA / PNG
+   ├─ HIT  → return the consumer's cached payload
    │
    └─ MISS
         │
@@ -461,15 +615,15 @@ usvg bytes (Uint8Array)
        RGBA bytes (Uint8Array)
         │
         ▼  [consumer's encoder]
-       PNG (Uint8Array)
+       PNG (Uint8Array) or canvas draw
         │
         ▼  [cache.set]
         return
 ```
 
-The two Wasm builds are independently loadable. A consumer that
-hits the cache 99% of the time will only ever load the `usvg`
-Wasm.
+The package itself does not see PNG. The two Wasm builds are
+independently loadable. A consumer that hits the cache 99% of the
+time will only ever load the `usvg` Wasm.
 
 ---
 
@@ -481,12 +635,12 @@ Wasm.
   current dependency lists in §3 are the minimum; the agent
   should not add anything that inflates either one.
 - **Wasm cold-start latency per artifact.** First-call
-  `await init()` cost. The TS wrapper handles this with a single
-  per-module `initialized` flag, which is sufficient.
+  `await init()` cost. The TS wrapper handles this with a
+  single per-module `initialized` flag, which is sufficient.
 - **Wasm linear-memory-to-JS-heap copies.** These are the two
-  `memcpy`s in the data flow diagrams. There is nothing the agent
-  can do about them short of changing the format (which is
-  prohibited).
+  `memcpy`s in the data flow diagrams. There is nothing the
+  agent can do about them short of changing the format (which
+  is prohibited).
 
 ### 7.2 Not worth optimizing
 
@@ -521,7 +675,7 @@ If the SVG is pathologically large, or if `width` / `height` are
 pathologically large, the Wasm linear memory may exhaust.
 `wasm-bindgen` will surface this as a JS exception. The caller is
 expected to handle it; the agent must not pre-emptively cap input
-size inside `svg2ui8a`.
+size inside the package.
 
 ### 8.4 Version skew
 
@@ -538,21 +692,31 @@ by a newer `rgba` Wasm if the postcard layout changed in between.
 The cache key versioning in
 `docs/project-constitution.md` §6 is the intended escape hatch.
 
+Because both crates use the workspace-pinned `usvg` and
+`postcard` versions (§3.4), this kind of skew only happens when
+the consumer deploys mismatched `usvg` and `rgba` builds (a
+deploy-time concern), not when the package itself is built.
+
 ---
 
 ## 9. Dependency graph (one-line summary)
 
 ```
-svg2ui8a (TS)
+@tksh/svg2ui8a (TS)
   ├── svg2usvg_bg.wasm (Wasm)
-  │     ├── usvg
-  │     └── postcard
+  │     ├── usvg              (workspace-pinned)
+  │     ├── postcard          (workspace-pinned)
+  │     ├── serde
+  │     └── wasm-bindgen
   │
   └── usvg2rgba_bg.wasm (Wasm)
-        ├── usvg
-        ├── postcard
+        ├── usvg              (workspace-pinned)
+        ├── postcard          (workspace-pinned)
+        ├── serde
+        ├── serde-wasm-bindgen
         ├── resvg
-        └── tiny-skia
+        ├── tiny-skia
+        └── wasm-bindgen
 ```
 
 No other dependencies. If a future plan adds another dependency
