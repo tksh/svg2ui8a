@@ -48,20 +48,14 @@ Wasm binary. They are imported separately and used separately.
 ```
 
 - Input: an SVG string.
-- Output: a `Promise<Uint8Array>` of the **postcard-encoded
-  `usvg::Tree`**.
+- Output: a `Promise<Uint8Array>` of a **CBOR-encoded payload**
+  representing the parsed-and-normalized SVG.
 - Purpose: produce a stable, content-addressable, opaque handle
   to the normalized SVG. Hash the bytes. Cache the bytes. Ship the
   bytes.
 
-The `Uint8Array` is:
-
-- The Rust `usvg::Tree` (as produced by `usvg::Tree::from_str` with
-  `usvg::Options::default()`), serialized via
-  `postcard::to_stdvec`.
-- Self-contained and opaque from the consumer's perspective.
-- Identical byte-for-byte when produced from visually equivalent
-  SVGs (i.e. SVGs that `usvg` normalizes to the same `Tree`).
+The `Uint8Array` is a self-contained, opaque blob. Same SVG input
+→ same bytes (modulo a package-version prefix; see §6).
 
 ### 2.2 `usvg2rgba` — the consumer
 
@@ -72,12 +66,12 @@ The `Uint8Array` is:
 
 - Input:
   - `usvg`: a `Uint8Array` produced by `svg2usvg` (or by a
-    compatible producer). Must be a valid postcard-encoded
-    `usvg::Tree`.
+    compatible producer). Must be a valid CBOR-encoded payload of
+    the package's intermediate representation.
   - `options`: optional.
 - Output: a `Promise<RgbaResult>`, where `RgbaResult` carries both
   the pixel data and the metadata a downstream consumer needs to
-  know what to do with it (width, height, alpha mode).
+  know what to do with it.
 - Purpose: turn the content-addressable handle into RGBA bytes
   that a canvas, an image pipeline, or a downstream encoder
   (PNG, WebP, etc.) can consume.
@@ -88,6 +82,28 @@ loads the rasterizer. A consumer who already has a cached
 `usvg` payload and wants pixels imports `./rgba` and never runs
 the SVG parser. A consumer who wants both imports both, but the
 two Wasm artifacts are loaded independently.
+
+### 2.3 What "intermediate representation" means
+
+The exact format of the bytes that flow between `svg2usvg` and
+`usvg2rgba` is a **design decision left to the implementation**,
+within the constraints of this constitution. The intermediate must:
+
+- Be encoded as **CBOR** (RFC 8949).
+- Carry enough information for `usvg2rgba` to render the same visual
+  result that the original SVG would have produced.
+- Be the **same format** on both ends — `svg2usvg` writes it,
+  `usvg2rgba` reads it. There is no other producer or consumer in
+  the package.
+- Be **deterministic** for a given SVG input (modulo the
+  package-version prefix in §6), so that the bytes can be hashed
+  to produce a stable cache key.
+
+The implementation is free to choose the inner structure (a
+self-designed DTO, a serialization of `usvg::Tree` if the upstream
+crate supports it, or any other representation) as long as the
+constraints above hold. The implementation plan must document
+which choice was made and why.
 
 ---
 
@@ -105,7 +121,7 @@ are out of scope:
   `defaultFontFamily`.
 - No system font enumeration.
 - If the input SVG contains `<text>` elements, they will be parsed
-  by `usvg` but may not render meaningfully downstream. This is the
+  but may not render meaningfully downstream. This is the
   caller's problem, not ours.
 
 ### 3.2 No BBox
@@ -149,16 +165,27 @@ Imports use Deno-style specifiers (`jsr:`, `deno:`, or relative
 paths). `npm:` is not allowed in package code (see
 `./AGENTS.md` §5.1).
 
-### 3.7 No custom serialization
+### 3.7 CBOR is the serialization format
 
-The serialization format is `postcard`. It is not negotiable. Do
-not introduce CBOR, MessagePack, bincode, JSON, or any other
-format.
+The serialization format is **CBOR (RFC 8949)**. It is not
+negotiable. Do not introduce `postcard`, MessagePack, bincode,
+JSON, or any other format.
 
-`postcard` is the format because it is the smallest and fastest
-option that requires zero new dependencies on the JS side (the JS
-side never has to decode it; it only passes the bytes to a hashing
-function or to `usvg2rgba`).
+CBOR was chosen for the package because:
+
+- It is an **IETF standard** with a stable, versioned spec.
+- It is **CDDL-documentable** (RFC 8610), so the format can be
+  formally defined alongside the package.
+- It has a **`.cbor` extension** and a content-type, so the
+  payload is recognizable as a first-class artifact, not a
+  crate-internal blob.
+- It is **independent of any one Rust crate**: a future migration
+  to a different language or crate does not require a new
+  encoding.
+
+If a future task needs to ship a *different* format (e.g. for
+performance), that task must explicitly amend this section. The
+default is CBOR.
 
 ### 3.8 No runtime CDN imports in the browser bundle
 
@@ -180,6 +207,10 @@ would force every consumer to load code they do not use.
 
 ## 4. API surface
 
+The API surface is **specified by shape, not by detail**. The
+implementer chooses the inner types, the inner option names, the
+inner error type. What is fixed is the *boundary*.
+
 ### 4.1 `svg2usvg`
 
 ```ts
@@ -188,30 +219,48 @@ export function svg2usvg(svg: string): Promise<Uint8Array>;
 ```
 
 - Input: an SVG string. No options, no second argument.
-- Output: a `Promise<Uint8Array>` of the postcard-encoded
-  `usvg::Tree`.
-- Errors: rejected with an error if the SVG cannot be parsed by
-  `usvg`. Error type is whatever `wasm-bindgen` produces; consumers
-  are expected to surface it.
+- Output: a `Promise<Uint8Array>` of the CBOR-encoded intermediate.
+- Errors: rejected with an error if the SVG cannot be parsed.
+  Error type is whatever `wasm-bindgen` produces; consumers are
+  expected to surface it.
 
 ### 4.2 `usvg2rgba`
 
 ```ts
 // jsr:@tksh/svg2ui8a/rgba
-
-export type AlphaMode = "straight" | "premultiplied";
+//
+// The exact shape of `Usvg2RgbaOptions` and `RgbaResult` is an
+// implementation choice. The shape below is a *reference shape*,
+// not a contract. The implementation may add or rename fields,
+// provided the boundary in §2.2 is preserved.
 
 export interface Usvg2RgbaOptions {
+  // Optional target dimensions. See §4.3.
   width?: number;
   height?: number;
-  alphaMode?: AlphaMode;          // default: "straight"
+
+  // Optional alpha handling. The implementation chooses the name
+  // and the value set; the contract is that the default returns
+  // straight (non-premultiplied) RGBA, and an option exists to
+  // request the bytes as `tiny-skia` produced them (premultiplied).
+  // A string literal enum ("straight" | "premultiplied") is
+  // preferred over a boolean, so future modes can be added
+  // without an API break.
+  // alphaMode?: "straight" | "premultiplied";
 }
 
 export interface RgbaResult {
-  pixels: Uint8Array;             // width * height * 4 bytes
+  // RGBA pixels. One pixel per 4 bytes. Total length is
+  // width * height * 4. Row-major. See §5.2.
+  pixels: Uint8Array;
+
+  // Actual rendered dimensions after any options were applied.
   width: number;
   height: number;
-  alphaMode: AlphaMode;           // matches the option that produced it
+
+  // The alpha mode of the returned pixels. Must reflect the option
+  // that produced them (or the default).
+  // alphaMode: "straight" | "premultiplied";
 }
 
 export function usvg2rgba(
@@ -222,55 +271,32 @@ export function usvg2rgba(
 
 - Input:
   - `usvg`: a `Uint8Array` produced by `svg2usvg` (or by a
-    compatible producer). Must be a valid postcard-encoded
-    `usvg::Tree`.
-  - `options`: optional.
-    - `width`: render target width in pixels. If omitted, the
-      natural width of the SVG is used.
-    - `height`: render target height in pixels. If omitted, the
-      natural height of the SVG is used.
-    - `alphaMode`: `"straight"` (default) returns
-      non-premultiplied RGBA, with the Wasm side doing the
-      unmultiply. `"premultiplied"` returns the
-      `tiny-skia` pixmap bytes as-is, with channels
-      premultiplied by alpha.
-- Output: a `Promise<RgbaResult>` where:
-  - `pixels` is the raw RGBA buffer (`R, G, B, A, ...`).
-  - `width` and `height` are the actual rendered dimensions,
-    after any options are applied.
-  - `alphaMode` is the alpha mode of the returned `pixels`
-    (matches the option, or `"straight"` if the option was
-    omitted).
-- Errors: rejected if:
-  - the input `usvg` bytes are not a valid postcard-encoded
-    `usvg::Tree`,
-  - the requested `width` or `height` is not a positive
-    integer,
-  - the SVG's natural size is zero in either dimension,
-  - the Wasm linear memory is exhausted.
+    compatible producer). Must be a valid CBOR-encoded payload.
+  - `options`: optional, see above.
+- Output: a `Promise<RgbaResult>`, see above.
+- Errors: rejected if the input is not a valid CBOR-encoded
+  payload, if the requested dimensions are not positive integers,
+  if the SVG's natural size is zero in either dimension, or if
+  the Wasm linear memory is exhausted.
 
-### 4.3 Independent scaling
+### 4.3 Sizing
 
 If both `width` and `height` are omitted, the natural SVG size is
-used. If only one is provided, the other is taken from the
-natural SVG size — the output is **exactly** `width × height`,
-with non-uniform scaling if the aspect ratio of
-`(width, height)` does not match the natural aspect ratio. **This
-is a deliberate design choice, not a bug.** It mirrors `resvg`'s
-default behavior.
+used. If only one is provided, the other is taken from the natural
+SVG size — the output is exactly `width × height`, with
+non-uniform scaling if the aspect ratio of `(width, height)` does
+not match the natural aspect ratio. **This is a deliberate design
+choice, not a bug.** It mirrors `resvg`'s default behavior.
 
-The natural size comes from `tree.size()` (user units). The cast
-to `u32` is rounding toward zero (Rust `as u32` for the `f32` /
-`f64` natural size). The natural size of a well-formed SVG is in
-practice always a small integer; pathological floats are the
-caller's problem.
+The implementation documents the exact natural-size handling
+(integer, non-zero, etc.) in its test suite.
 
 ### 4.4 Things that are explicitly *not* in the API
 
 For both functions:
 
-- No `format` option (`'binary' | 'json' | ...`). The format is
-  `postcard`. Always.
+- No `format` option (`'binary' | 'cbor' | 'json' | ...`). The
+  format is **CBOR**. Always.
 - No `background` / `backgroundColor` parameter. There is no
   background in the output; the canvas is fully transparent
   outside the painted shapes.
@@ -283,7 +309,7 @@ For both functions:
 For `svg2usvg` only:
 
 - No `width` / `height` / `scale` parameters. The output dimensions
-  live in the tree.
+  live in the intermediate.
 
 For `usvg2rgba` only:
 
@@ -296,12 +322,11 @@ The following are intentionally deferred:
 
 - A "convenience" PNG-encoding helper that turns
   `RgbaResult.pixels` into a PNG file. If added, it would be a
-  *third* subpath (`./png`) and a *third* Wasm build, with the
-  PNG encoder as an opt-in dependency. It is not this package.
+  *third* subpath (`./png`) and a *third* Wasm build.
 - WebP encoding. Same story.
 - A "convenience" wrapper that takes an SVG string and returns
   RGBA in one call (i.e. `svg2usvg` + `usvg2rgba` chained). If
-  added, it would be a *fourth* subpath. It is not this package.
+  added, it would be a *fourth* subpath.
 - A structured-object input (e.g. a JS object representing the
   vector graphic, instead of an SVG string). This is a design
   question the human has not yet answered; see
@@ -317,17 +342,17 @@ a separate task and a separate plan.
 
 ### 5.1 `svg2usvg` output
 
-The `Uint8Array` returned by `svg2usvg` is the postcard-encoded
-`usvg::Tree`. It is:
+The `Uint8Array` returned by `svg2usvg` is a **CBOR-encoded
+payload** of the package's intermediate representation. It is:
 
 - Self-contained, opaque from the consumer's perspective.
 - Identical byte-for-byte when produced from visually equivalent
   SVGs. This is the property that makes it useful as a cache key
   input.
-- Not a `usvg`-Tree-bytes, then `usvg`-Tree-`options`-bytes; the
-  natural dimensions are encoded inside the tree, and a consumer
-  that wants a different size passes `width` / `height` to
-  `usvg2rgba`, not to `svg2usvg`.
+- Not a `(intermediate, options)` pair; the natural dimensions
+  are encoded inside the intermediate, and a consumer that wants
+  a different size passes `width` / `height` to `usvg2rgba`, not
+  to `svg2usvg`.
 
 ### 5.2 `usvg2rgba` output
 
@@ -341,24 +366,23 @@ The `Uint8Array` returned in `RgbaResult.pixels` is:
 - **No** PNG header, **no** EXIF, **no** compression. Pure pixels.
 - **Fully zero-initialized** before the SVG is drawn. Any pixel
   not painted by the SVG has zero alpha (and zero RGB).
-- Alpha mode matches the `alphaMode` field of the
-  `RgbaResult`. With the default `"straight"`, channels are
-  **not premultiplied** (i.e. a 50%-opaque red pixel is
-  `(255, 0, 0, 128)`, not `(128, 0, 0, 128)`). With
-  `"premultiplied"`, channels **are premultiplied** by alpha
-  (the unmodified `tiny-skia` pixmap bytes).
+- The default alpha mode returns **straight (non-premultiplied)**
+  channels (a 50%-opaque red pixel is `(255, 0, 0, 128)`, not
+  `(128, 0, 0, 128)`). When the consumer requests the
+  `tiny-skia`-as-is mode, channels are premultiplied by alpha.
 
 ### 5.3 Determinism caveat
 
-`postcard` does not, by spec, guarantee deterministic encoding.
-The package relies on `usvg::Tree`'s structure being
-**sufficiently ordered** that `postcard` produces the same bytes
-across runs. The agent should not "fix" this by re-ordering
-fields or by switching formats; if a determinism bug is found,
-escalate per `./AGENTS.md` §10.
-
-The intended escape hatch for format changes is the version
-prefix in the cache key (see §6), not a serialization rewrite.
+CBOR with the standard encoder is not guaranteed to produce
+byte-identical output for semantically-equal inputs. The
+implementation must verify (and the test suite must assert) that
+the package's CBOR encoding is deterministic for a given SVG
+input. If the implementation cannot achieve this with the chosen
+crate, the implementation must switch to a deterministic-encoding
+profile (e.g. **dCBOR** — "deterministic CBOR") and document the
+switch. Switching to dCBOR does not require a constitution
+amendment, because dCBOR is a profile of CBOR; the package is
+still "CBOR" by the rule in §3.7.
 
 ---
 
@@ -369,14 +393,15 @@ pattern, documented here so the agent does not invent something
 different:
 
 ```
-cacheKey = "<usvg-version>-<postcard-version>-" + hex(sha256(bytes))
+cacheKey = "<package-version>-<cbor-encoder-version>-" + hex(sha256(bytes))
 ```
 
 The prefix is the consumer's responsibility. Including the
-`usvg` and `postcard` versions ensures that any change in the
-serialization pipeline (a `usvg` upgrade, a `postcard` upgrade, a
-Rust compiler change that alters layout) automatically invalidates
-all existing cache entries without code-level coordination.
+package version and the CBOR-encoder version ensures that any
+change in the serialization pipeline (a crate upgrade, a
+package-version bump, a change in the inner DTO) automatically
+invalidates all existing cache entries without code-level
+coordination.
 
 ---
 
@@ -386,8 +411,7 @@ The package follows **strict semver**:
 
 - Patches: Wasm runtime tweaks that do not change the output bytes
   for any input.
-- Minors: additions to the API surface (none planned at present).
-  Output bytes may change.
+- Minors: additions to the API surface. Output bytes may change.
 - Majors: changes to the output format itself, or removals from the
   API surface.
 

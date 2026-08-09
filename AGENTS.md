@@ -22,9 +22,8 @@ SVG-processing toolkit whose inputs and outputs are all
 - `jsr:@tksh/svg2ui8a/rgba` → `usvg2rgba(usvg, options?): Promise<RgbaResult>`
 
 There is no web application in this repository, no Deno Deploy
-wiring, and no app-side routing. The web-application context is
-background for *why* the package exists; the package is the only
-thing this repository ships.
+wiring, and no app-side routing. The package is the only thing
+this repository ships.
 
 See:
 
@@ -55,11 +54,19 @@ Concretely:
   package, explain in the plan why an existing one cannot do the job.
 - **No silent scope expansion.** If the plan surfaces a need that was
   not in the original task, stop and ask.
+- **Implementer judgment is welcome.** When the governing documents
+  describe a *shape* but not a *detail*, the implementation detail is
+  yours to choose. The constitution and architecture describe the
+  boundary; the engineering playbook describes the workflow. They do
+  not describe every function signature, every type mapping, or every
+  import shape. If you find yourself writing code that the
+  constitution does not contradict, you are within your mandate.
 - **Verify before reporting done.** Run the project's tests, the
   formatter, the linter, the type checker. Report exactly which
   commands you ran and their outcomes.
 - **When in doubt, ask.** A focused question is cheaper than a wrong
-  implementation.
+  implementation. "Should I use A or B?" is fine; "I picked A because
+  reasons" is also fine; "I silently chose A and built on it" is not.
 
 ---
 
@@ -83,9 +90,8 @@ layer has been read.
 
 - Any other file under `./docs/` — read only when the human explicitly
   references it, or when the task description names it. This includes
-  `docs/open-questions-answers.md` (a resolution log, not current
-  policy) and `docs/plans/<feature>.md` (only when the task is to
-  execute a specific plan).
+  `docs/plans/<feature>.md` (only when the task is to execute a
+  specific plan).
 
 ### Never read
 
@@ -172,17 +178,15 @@ human must approve.
 ## 6. Testing
 
 - The project's test command is `deno task test`, which orchestrates
-  `cargo test`, `wasm-pack test`, and `deno test`. See
-  `./docs/engineering-playbook.md` §1 for the exact orchestration.
-- For Rust code, run `cargo test` (and `cargo test --target
-  wasm32-unknown-unknown` if Wasm is involved).
+  the project's test layers. See `./docs/engineering-playbook.md` §1
+  for the exact orchestration.
+- The package produces RGBA pixels, not PNG. PNG encoding is the
+  consumer's concern.
 - Visual / pixel-equality tests on PNG output, if any, must be
   reviewed by the human before being marked passing. **Byte-level
   RGBA buffer tests** (asserting the contents of `RgbaResult.pixels`
   against a known-good output) are unit tests; they do not require
   human review.
-- This package produces RGBA pixels, not PNG. PNG encoding is the
-  consumer's concern.
 
 ---
 
@@ -214,14 +218,14 @@ These are hard limits that apply regardless of what the plan says.
   - `docs/engineering-playbook.md`
 
   The human owns the documentation. If something is wrong, the
-  human will edit it. Plans under `docs/plans/` and resolution
-  logs (e.g. `docs/open-questions-answers.md`) are exempt from
+  human will edit it. Plans under `docs/plans/` are exempt from
   this rule — they are working artifacts.
 
 - Do not read or modify anything under `./notes/`. That is the
   human's personal design scratchpad, not project documentation.
 - Do not introduce a custom binary serialization format. The
-  serialization is `postcard` and is fixed.
+  serialization is **CBOR** (RFC 8949) and is fixed. See
+  `./docs/project-constitution.md` §3.7.
 - Do not add fonts or font-handling code. The project has a hard
   constraint of no fonts.
 - Do not add BBox-related code. The project does not use BBox.
@@ -273,8 +277,7 @@ Stop and ask the human if:
   a target JS bundler, a specific Deno version, a specific Wasm
   target).
 - A dependency cannot be vendored, blocking §5.2.
-- The `usvg::Tree` ↔ `postcard` round-trip test (see
-  `./docs/engineering-playbook.md` §3.1) fails, because that is
-  the only blocking technical assumption in the project.
+- The cross-Wasm test that the engineering playbook calls for fails
+  for a reason the agent cannot diagnose in a few minutes.
 
 Do not guess. Do not push through. Ask.
