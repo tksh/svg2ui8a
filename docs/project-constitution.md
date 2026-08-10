@@ -78,6 +78,20 @@ consumer who already has a cached `usvg` payload and wants pixels imports
 `./rgba` and never runs the SVG parser. A consumer who wants both imports both,
 but the two Wasm artifacts are loaded independently.
 
+`usvg2rgba` validates its input by **shape**, not by **provenance**. It has no
+way to know, and does not care, whether a given `Uint8Array` was produced by
+`svg2usvg`, read back from a `.cbor` file that `svg2usvg` once wrote, or
+assembled by an entirely different producer. Any canonical-CBOR byte string
+that satisfies the envelope and DTO rules in §2.3 is a valid `usvg2rgba` input.
+`svg2usvg` is the only producer this package ships, but it is not the only
+producer the format allows. This is a deliberate design property, not an
+accident: it is what lets a future, independently specified format (see
+`notes/straightlines-vision.md`) emit envelope-conformant bytes directly and
+call `usvg2rgba`, skipping SVG string generation entirely, without requiring
+any change to this package. Building such a producer is out of scope for this
+package (§4.5) and is not this package's concern — only staying faithful to the
+envelope contract is.
+
 ### 2.3 What "intermediate representation" means
 
 The intermediate is a versioned package file format, not a serialized upstream
@@ -160,11 +174,11 @@ allowed in package code (see `./AGENTS.md` §5.1).
 
 ### 3.7 CBOR is the serialization format
 
-The serialization format is **CBOR (RFC 8949)**. It is not negotiable. Do not
-introduce `postcard`, MessagePack, bincode, JSON, or any other format.
+The serialization format is **CBOR (RFC 8949)**, encoded and decoded exclusively
+with Cargo package `cbor-core` version `0.10.1` (`cbor_core` in Rust source).
+This is not negotiable.
 
-The implementation uses Cargo package `cbor-core` version `0.10.1` (`cbor_core`
-in Rust source). It emits canonical CBOR and accepts only canonical CBOR package
+`cbor_core` emits canonical CBOR and accepts only canonical CBOR package
 intermediates; non-canonical encodings are rejected. The decoder also validates
 the format identifier, format version, required fields, field types, numeric
 ranges, and supported DTO variants before it creates a render tree.
@@ -319,8 +333,11 @@ The following are intentionally deferred:
   (i.e. `svg2usvg` + `usvg2rgba` chained). If added, it would be a _fourth_
   subpath.
 - A structured-object input (e.g. a JS object representing the vector graphic,
-  instead of an SVG string). This is a design question the human has not yet
-  answered; see `./AGENTS.md` §10.
+  instead of an SVG string) accepted by a **new function this package would
+  ship**. This is a design question the human has not yet answered; see
+  `./AGENTS.md` §10. It is unrelated to §2.2's point that `usvg2rgba` already
+  accepts any envelope-conformant `Uint8Array` regardless of producer; that is
+  an existing property of the shipped API, not a deferred one.
 
 The agent must not implement any of these as part of an `svg2ui8a` task. If the
 human asks for them, the human will create a separate task and a separate plan.

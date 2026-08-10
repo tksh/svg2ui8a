@@ -436,8 +436,8 @@ Stop and ask. The most common cases are:
 - "Should I optimize the Wasm size?" → Default: only if the change is trivial.
   If it requires restructuring, escalate.
 - "Can I use a CDN at runtime?" → No. See `./AGENTS.md` §5.2.
-- "Should the package use CBOR or postcard?" → CBOR. See
-  `docs/project-constitution.md` §3.7.
+- "Which serialization format does the package use?" → `cbor-core` /
+  canonical CBOR, always. See `docs/project-constitution.md` §3.7.
 
 If the answer is not in this playbook, it is in `docs/project-constitution.md`.
 If it is not there either, it is a human decision.
