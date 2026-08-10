@@ -118,9 +118,9 @@ Straightlines は別途 CDDL、互換性規則、拡張規則、複数言語で�
 これは意図的な設計であり、将来 Straightlines 側のツールが SVG 文字列生成を
 経ずに、Straightlines 独自データから直接 envelope 準拠の canonical-CBOR
 バイト列を組み立て、それをそのまま `usvg2rgba` に渡す、という経路をあらかじめ
-可能にしている。そのプロデューサー自体（Straightlines 側の変換器）は
-svg2ui8a パッケージの範囲外であり、svg2ui8a 側に手を入れる必要はない。
-svg2ui8a が保証するのは envelope と DTO の契約に忠実であり続けることだけである。
+可能にしている。そのプロデューサー自体（Straightlines 側の変換器）は svg2ui8a
+パッケージの範囲外であり、svg2ui8a 側に手を入れる必要はない。 svg2ui8a
+が保証するのは envelope と DTO の契約に忠実であり続けることだけである。
 
 ---
 

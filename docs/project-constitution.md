@@ -81,14 +81,14 @@ but the two Wasm artifacts are loaded independently.
 `usvg2rgba` validates its input by **shape**, not by **provenance**. It has no
 way to know, and does not care, whether a given `Uint8Array` was produced by
 `svg2usvg`, read back from a `.cbor` file that `svg2usvg` once wrote, or
-assembled by an entirely different producer. Any canonical-CBOR byte string
-that satisfies the envelope and DTO rules in §2.3 is a valid `usvg2rgba` input.
+assembled by an entirely different producer. Any canonical-CBOR byte string that
+satisfies the envelope and DTO rules in §2.3 is a valid `usvg2rgba` input.
 `svg2usvg` is the only producer this package ships, but it is not the only
 producer the format allows. This is a deliberate design property, not an
 accident: it is what lets a future, independently specified format (see
 `notes/straightlines-vision.md`) emit envelope-conformant bytes directly and
-call `usvg2rgba`, skipping SVG string generation entirely, without requiring
-any change to this package. Building such a producer is out of scope for this
+call `usvg2rgba`, skipping SVG string generation entirely, without requiring any
+change to this package. Building such a producer is out of scope for this
 package (§4.5) and is not this package's concern — only staying faithful to the
 envelope contract is.
 
