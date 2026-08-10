@@ -1,0 +1,11 @@
+{
+  "tasks": {
+    "build": "deno run -A scripts/build.ts",
+    "test": "deno task test:rust && deno task test:wasm && deno test -A",
+    "test:rust": "cd crates/svg2usvg && cargo test && cd ../usvg2rgba && cargo test",
+    "test:wasm": "deno run -A scripts/test-wasm.ts",
+    "fmt": "cargo fmt && deno fmt",
+    "lint": "deno lint",
+    "check": "deno check src/**/*.ts tests/**/*.ts scripts/*.ts"
+  }
+}

@@ -14,14 +14,14 @@ first, baseline implementation.
 
 ## 0. Preconditions
 
-- [ ] Re-read `AGENTS.md`, `docs/project-constitution.md`,
-      `docs/system-architecture.md`, `docs/engineering-playbook.md` in that
+- [x] Re-read `AGENTS.md`, `docs/project-constitution.md`,
+      `docs/system-architecture.md`, and `docs/engineering-playbook.md` in that
       order before writing any code.
-- [ ] Confirm no part of this plan proposes: a third serialization format, a
+- [x] Confirm no part of this plan proposes: a third serialization format, a
       single merged Wasm artifact, PNG/WebP output, font/text support,
       raster-image support, a Node.js target, or a runtime CDN import
       (`project-constitution.md` §3).
-- [ ] Draft `docs/plans/baseline-implementation.md` from this checklist and get
+- [x] Draft `docs/plans/baseline-implementation.md` from this checklist and get
       human sign-off before writing source files (`engineering-playbook.md` §4,
       step 3).
 
@@ -29,22 +29,22 @@ first, baseline implementation.
 
 ## 1. Repository scaffolding
 
-- [ ] Create the workspace root `Cargo.toml` with the three members
+- [x] Create the workspace root `Cargo.toml` with the three members
       (`crates/intermediate`, `crates/svg2usvg`, `crates/usvg2rgba`) and
       `resolver = "2"`.
-- [ ] Pin `[workspace.dependencies]`: `cbor-core = "0.10.1"`,
+- [x] Pin `[workspace.dependencies]`: `cbor-core = "0.10.1"`,
       `usvg = { version = "0.47.0", default-features = false }`,
       `resvg = { version = "0.47.0", default-features = false }`
       (`system-architecture.md` §3.4).
-- [ ] Create `jsr.json` with the three exports: `.`, `./usvg`, `./rgba`
+- [x] Create `jsr.json` with the three exports: `.`, `./usvg`, `./rgba`
       (`system-architecture.md` §2).
-- [ ] Create `deno.json` with the `build`, `test`, `test:rust`, `test:wasm`,
+- [x] Create `deno.json` with the `build`, `test`, `test:rust`, `test:wasm`,
       `fmt`, `lint`, `check` tasks (`system-architecture.md` §2,
       `engineering-playbook.md` §1).
-- [ ] Create `.gitignore`: `vendor/` (except release snapshots), `crates/*/pkg/`
+- [x] Create `.gitignore`: `vendor/` (except release snapshots), `crates/*/pkg/`
       if not committed, build scratch directories.
-- [ ] Create `CHANGELOG.md` with an `Unreleased` section.
-- [ ] Confirm `docs/plans/` exists as the agent-writable working-artifact
+- [x] Create `CHANGELOG.md` with an `Unreleased` section.
+- [x] Confirm `docs/plans/` exists as the agent-writable working-artifact
       directory (`system-architecture.md` §1).
 
 ---
@@ -227,9 +227,9 @@ This crate is the single source of truth for the versioned DTO and codec
 
 ## 9. Documentation and changelog
 
-- [ ] Add an `Unreleased` entry to `CHANGELOG.md` describing the baseline
+- [x] Add an `Unreleased` entry to `CHANGELOG.md` describing the baseline
       implementation.
-- [ ] If any implementer judgment call was made that future agents should not
+- [x] If any implementer judgment call was made that future agents should not
       re-litigate (DTO field names, error type, pixel-arithmetic details, Wasm
       import shape), record it in `docs/plans/baseline-implementation.md` with a
       short rationale (`engineering-playbook.md` §0).

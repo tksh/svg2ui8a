@@ -1,0 +1,9 @@
+{
+  "name": "@tksh/svg2ui8a",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./src/mod.ts",
+    "./usvg": "./src/usvg.ts",
+    "./rgba": "./src/rgba.ts"
+  }
+}
