@@ -54,26 +54,26 @@ first, baseline implementation.
 This crate is the single source of truth for the versioned DTO and codec
 (`system-architecture.md` §1, §4).
 
-- [ ] Define `IntermediateV1`: the version-1 DTO drawing fields, chosen to cover
+- [x] Define `IntermediateV1`: the version-1 DTO drawing fields, chosen to cover
       the supported `usvg::Tree` subset (lines/curves/fills/paint — per the
       implementer's choice, documented with a 1–3 sentence rationale per field,
       `system-architecture.md` §4).
-- [ ] Implement the canonical-CBOR envelope with `cbor_core`: top-level map,
+- [x] Implement the canonical-CBOR envelope with `cbor_core`: top-level map,
       integer keys `0` (identifier `"svg2ui8a/usvg"`), `1` (unsigned format
       version, currently `1`), `2` (DTO payload) (`project-constitution.md`
       §2.3).
-- [ ] Implement `encode(&IntermediateV1) -> Vec<u8>` producing canonical CBOR
+- [x] Implement `encode(&IntermediateV1) -> Vec<u8>` producing canonical CBOR
       only.
-- [ ] Implement `decode(&[u8]) -> Result<IntermediateV1, DecodeError>` that:
-  - [ ] Rejects non-canonical CBOR.
-  - [ ] Validates the format identifier exactly.
-  - [ ] Validates the format version is supported.
-  - [ ] Validates required fields, field types, and numeric ranges.
-  - [ ] Rejects unsupported DTO variants.
-  - [ ] Never panics on malformed input.
-- [ ] Implement conversion `usvg::Tree subset -> IntermediateV1` (used by
+- [x] Implement `decode(&[u8]) -> Result<IntermediateV1, DecodeError>` that:
+  - [x] Rejects non-canonical CBOR.
+  - [x] Validates the format identifier exactly.
+  - [x] Validates the format version is supported.
+  - [x] Validates required fields, field types, and numeric ranges.
+  - [x] Rejects unsupported DTO variants.
+  - [x] Never panics on malformed input.
+- [x] Implement conversion `usvg::Tree subset -> IntermediateV1` (used by
       `svg2usvg`).
-- [ ] Implement conversion `IntermediateV1 -> usvg::Tree` (used by `usvg2rgba`).
+- [x] Implement conversion `IntermediateV1 -> usvg::Tree` (used by `usvg2rgba`).
 - [ ] Confirm the DTO excludes text, raster images, BBoxes, animation state, and
       external resources (`project-constitution.md` §2.3, §3.1–§3.3).
 - [ ] Write unit tests: encode/decode round-trip, envelope shape, rejection of
