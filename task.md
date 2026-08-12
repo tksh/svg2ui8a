@@ -74,9 +74,9 @@ This crate is the single source of truth for the versioned DTO and codec
 - [x] Implement conversion `usvg::Tree subset -> IntermediateV1` (used by
       `svg2usvg`).
 - [x] Implement conversion `IntermediateV1 -> usvg::Tree` (used by `usvg2rgba`).
-- [ ] Confirm the DTO excludes text, raster images, BBoxes, animation state, and
+- [x] Confirm the DTO excludes text, raster images, BBoxes, animation state, and
       external resources (`project-constitution.md` §2.3, §3.1–§3.3).
-- [ ] Write unit tests: encode/decode round-trip, envelope shape, rejection of
+- [x] Write unit tests: encode/decode round-trip, envelope shape, rejection of
       each invalid-input category above.
 
 ---
