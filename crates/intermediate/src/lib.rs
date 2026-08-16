@@ -2,7 +2,7 @@
 
 use cbor_core::{EncodeFormat, SequenceDecoder, SequenceWriter, Value};
 use std::fmt;
-use usvg::Tree;
+use usvg::{Node, Tree};
 
 const FORMAT_IDENTIFIER: &str = "svg2ui8a/usvg";
 const FORMAT_VERSION: u8 = 1;
@@ -210,8 +210,35 @@ impl IntermediateV1 {
         Ok(Self { shapes })
     }
 
-    pub fn from_tree(_tree: &Tree) -> Result<Self, DecodeError> {
-        Ok(Self::default())
+    pub fn from_tree(tree: &Tree) -> Result<Self, DecodeError> {
+        let mut shapes = Vec::new();
+
+        // usvg::Tree has a root Group; Group.children() returns &[Node]
+        fn collect_shapes(group: &usvg::Group, shapes: &mut Vec<Shape>) {
+            for node in group.children() {
+                match node {
+                    Node::Path(_path) => {
+                        // Add a shape with empty path data for now.
+                        // Full path data encoding from usvg's internal types
+                        // will be added in a future update.
+                        shapes.push(Shape {
+                            path_data: vec![],
+                            fill: None,
+                            opacity: 1.0,
+                        });
+                    }
+                    Node::Group(nested_group) => {
+                        // Recurse into nested groups
+                        collect_shapes(nested_group, shapes);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        collect_shapes(&tree.root(), &mut shapes);
+
+        Ok(Self { shapes })
     }
 
     pub fn to_tree(&self) -> Result<Tree, DecodeError> {
