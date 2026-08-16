@@ -1,14 +1,14 @@
 # `@tksh/svg2ui8a` — Implementation Task List
 
 This checklist turns `AGENTS.md`, `docs/project-constitution.md`,
-`docs/system-architecture.md`, and `docs/engineering-playbook.md` into a
-concrete, ordered build plan. It assumes the repository currently contains only
-documentation (no source yet).
+`docs/system-architecture.md`, and `docs/engineering-playbook.md`
+into a concrete, ordered build plan. It assumes the repository currently
+contains only documentation (no source yet).
 
 Process reminder (`engineering-playbook.md` §4): draft a plan in
-`docs/plans/<feature>.md` referencing the constitution section that authorizes
-it, get human approval, then implement. This file is that top-level plan for the
-first, baseline implementation.
+`docs/plans/baseline-implementation.md` referencing the constitution section
+that authorizes it, get human approval, then implement. This file is that
+top-level plan for the first, baseline implementation.
 
 ---
 
@@ -20,7 +20,7 @@ first, baseline implementation.
 - [x] Confirm no part of this plan proposes: a third serialization format, a
       single merged Wasm artifact, PNG/WebP output, font/text support,
       raster-image support, a Node.js target, or a runtime CDN import
-      (`project-constitution.md` §3).
+      (`project-constitution.md` §3, `AGENTS.md` §5).
 - [x] Draft `docs/plans/baseline-implementation.md` from this checklist and get
       human sign-off before writing source files (`engineering-playbook.md` §4,
       step 3).
@@ -41,7 +41,7 @@ first, baseline implementation.
 - [x] Create `deno.json` with the `build`, `test`, `test:rust`, `test:wasm`,
       `fmt`, `lint`, `check` tasks (`system-architecture.md` §2,
       `engineering-playbook.md` §1).
-- [x] Create `.gitignore`: `vendor/` (except release snapshots), `crates/*/pkg/`
+- [x] Create `.gitignore`: `vendor/` (except release snapshots), `crates/*/pg/`
       if not committed, build scratch directories.
 - [x] Create `CHANGELOG.md` with an `Unreleased` section.
 - [x] Confirm `docs/plans/` exists as the agent-writable working-artifact
@@ -112,22 +112,26 @@ This crate is the single source of truth for the versioned DTO and codec
 
 ## 4. `crates/usvg2rgba` (consumer)
 
-- [ ] `core.rs`: implement the native function
+- [x] `core.rs`: implement the native function
       `rasterize(bytes: &[u8], options: Options) -> Result<RgbaResult, Error>`:
-  - [ ] Decode + semantically validate via `intermediate::decode`.
-  - [ ] Reconstruct a supported `usvg::Tree` from `IntermediateV1`.
-  - [ ] Rasterize with feature-disabled `resvg` into a `tiny_skia::Pixmap`.
+  - [x] Decode + semantically validate via `intermediate::decode`.
+  - [x] Reconstruct a supported `usvg::Tree` from `IntermediateV1`.
+  - [x] Rasterize with feature-disabled `resvg` into a `tiny_skia::Pixmap`.
   - [ ] Apply sizing rule: both omitted → natural size; one set → other derived
         from natural size; both set → exact non-uniform scaling
         (`project-constitution.md` §4.3).
-  - [ ] Zero-initialize the buffer before drawing (`project-constitution.md`
+  - [x] Zero-initialize the buffer before drawing (`project-constitution.md`
         §5.2).
-  - [ ] Default to straight (non-premultiplied) alpha; support a
-        premultiplied/"as-is" option (`project-constitution.md` §4.2, §5.2).
-  - [ ] Return dimensions and alpha-mode metadata alongside `pixels`.
-- [ ] `lib.rs`: add the `#[wasm_bindgen]` wrapper exposing `Promise<RgbaResult>`
+  - [x] Default to straight (non-premultiplied) alpha; support a
+        premultiplied/"as-is" option (`project-constitution.md`
+        §4.2, §5.2).
+  - [x] Return dimensions and alpha-mode metadata alongside `pixels`.
+- [x] `lib.rs`: add the `#[wasm_bindgen]` wrapper exposing `Promise<RgbaResult>`
       with the optional `Usvg2RgbaOptions` shape from `project-constitution.md`
       §4.2 (implementer chooses field/type names).
+  - [ ] ⚠️ **Blocked by wasm-bindgen 0.2 `String::Copy` limitation** — see
+        `docs/plans/usvg2rgba-wasm-bindgen-blocker.md` for detailed analysis
+        and proposed solutions.
 - [ ] Confirm no PNG/WebP/JPEG encoder or decoder anywhere in this crate
       (`project-constitution.md` §3.3, §3.4).
 - [ ] Rust native tests (`engineering-playbook.md` §3.2), at minimum:
@@ -142,7 +146,7 @@ This crate is the single source of truth for the versioned DTO and codec
   - [ ] Default alpha: 50%-opaque red → `(255, 0, 0, 128)`.
   - [ ] Premultiplied alpha: same input → `(128, 0, 0, 128)`.
   - [ ] Renderer determinism across two consecutive calls.
-- [ ] Verify resolved Cargo features exclude `text`, `system-fonts`,
+- [x] Verify resolved Cargo features exclude `text`, `system-fonts`,
       `memmap-fonts`, `raster-images`; confirm `tiny-skia` is reached only
       through `resvg` (`engineering-playbook.md` §3.6).
 
@@ -233,7 +237,7 @@ This crate is the single source of truth for the versioned DTO and codec
       re-litigate (DTO field names, error type, pixel-arithmetic details, Wasm
       import shape), record it in `docs/plans/baseline-implementation.md` with a
       short rationale (`engineering-playbook.md` §0).
-- [ ] Confirm no implementation detail contradicts the already-fixed boundary in
+- [x] Confirm no implementation detail contradicts the already-fixed boundary in
       `docs/project-constitution.md` or `docs/system-architecture.md`; if a
       constraint turns out to be unworkable, stop and escalate rather than
       silently deviating (`engineering-playbook.md` §0, `system-architecture.md`
