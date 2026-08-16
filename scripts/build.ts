@@ -12,20 +12,19 @@
  */
 
 import { execSync } from "child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const ASSETS_DIR = join(__dirname, "assets");
-const SCRIPTS_DIR = join(__dirname, "..");
-const CARGO_DIR = join(SCRIPTS_DIR, "crates");
-const SRC_DIR = join(SCRIPTS_DIR, "src");
+const ASSETS_DIR = `${__dirname}/assets`;
+const SCRIPTS_DIR = `${__dirname}/..`;
+const CARGO_DIR = `${SCRIPTS_DIR}/crates`;
+const SRC_DIR = `${SCRIPTS_DIR}/src`;
 
 // Ensure assets directory exists
-if (!existsSync(ASSETS_DIR)) {
-  require("fs").mkdirSync(ASSETS_DIR, { recursive: true });
+if (!Deno.statSync(ASSETS_DIR).success) {
+  Deno.mkdirSync(ASSETS_DIR, { recursive: true });
 }
 
 // Helper to run a command and capture output
@@ -41,9 +40,9 @@ run(
 const svg2usvgWasm = run(
   "ls crates/svg2usvg/pkg/svg2usvg_bg.wasm",
 );
-require("fs").copyFileSync(
-  join(SCRIPTS_DIR, "crates/svg2usvg/pkg/svg2usvg_bg.wasm"),
-  join(ASSETS_DIR, "svg2usvg_bg.wasm"),
+Deno.copyFileSync(
+  `${SCRIPTS_DIR}/crates/svg2usvg/pkg/svg2usvg_bg.wasm`,
+  `${ASSETS_DIR}/svg2usvg_bg.wasm`,
 );
 console.log("  → copied to assets/svg2usvg_bg.wasm");
 
@@ -55,9 +54,9 @@ run(
 const usvg2rgbaWasm = run(
   "ls crates/usvg2rgba/pkg/usvg2rgba_bg.wasm",
 );
-require("fs").copyFileSync(
-  join(SCRIPTS_DIR, "crates/usvg2rgba/pkg/usvg2rgba_bg.wasm"),
-  join(ASSETS_DIR, "usvg2rgba_bg.wasm"),
+Deno.copyFileSync(
+  `${SCRIPTS_DIR}/crates/usvg2rgba/pkg/usvg2rgba_bg.wasm`,
+  `${ASSETS_DIR}/usvg2rgba_bg.wasm`,
 );
 console.log("  → copied to assets/usvg2rgba_bg.wasm");
 
@@ -67,15 +66,15 @@ console.log("  → copied to assets/usvg2rgba_bg.wasm");
 // satisfying the CDN-free constraint (constitution §3.8, AGENTS.md §5.2).
 
 // Generate src/usvg.ts
-const svg2usvgBytes = require("fs").readFileSync(
-  join(SCRIPTS_DIR, "crates/svg2usvg/pkg/svg2usvg_bg.wasm"),
+const svg2usvgBytes = Deno.readFileSync(
+  `${SCRIPTS_DIR}/crates/svg2usvg/pkg/svg2usvg_bg.wasm`,
 );
 const svg2usvgBase64 = svg2usvgBytes.toString("base64");
 const svg2usvgTsContent = "..."; // placeholder - actual generation omitted for brevity
 
 // Generate src/rgba.ts similarly
-const usvg2rgbaBytes = require("fs").readFileSync(
-  join(SCRIPTS_DIR, "crates/usvg2rgba/pkg/usvg2rgba_bg.wasm"),
+const usvg2rgbaBytes = Deno.readFileSync(
+  `${SCRIPTS_DIR}/crates/usvg2rgba/pkg/usvg2rgba_bg.wasm`,
 );
 const usvg2rgbaBase64 = usvg2rgbaBytes.toString("base64");
 
