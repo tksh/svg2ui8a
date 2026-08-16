@@ -83,29 +83,29 @@ This crate is the single source of truth for the versioned DTO and codec
 
 ## 3. `crates/svg2usvg` (producer)
 
-- [ ] `core.rs`: implement the native function
+- [x] `core.rs`: implement the native function
       `svg(&str) -> Result<Vec<u8>, Error>`:
-  - [ ] Parse with feature-disabled `usvg`.
-  - [ ] Reject `<text>` content with an error (not a panic, not a best-effort
+  - [x] Parse with feature-disabled `usvg`.
+  - [x] Reject `<text>` content with an error (not a panic, not a best-effort
         payload).
-  - [ ] Reject `<image>` / raster-image content with an error.
-  - [ ] Convert the parsed tree to `IntermediateV1` via `intermediate`.
-  - [ ] Encode via `intermediate::encode`.
-- [ ] `lib.rs`: add the `#[wasm_bindgen]` wrapper exposing `Promise<Uint8Array>`
+  - [x] Reject `<image>` / raster-image content with an error.
+  - [x] Convert the parsed tree to `IntermediateV1` via `intermediate`.
+  - [x] Encode via `intermediate::encode`.
+- [x] `lib.rs`: add the `#[wasm_bindgen]` wrapper exposing `Promise<Uint8Array>`
       and nothing else (no options parameter — `project-constitution.md` §4.1,
       §4.4).
-- [ ] Confirm this crate depends on `intermediate` and `usvg` only — no `resvg`,
+- [x] Confirm this crate depends on `intermediate` and `usvg` only — no `resvg`,
       no `tiny-skia`, no `png` (`system-architecture.md` §3.1,
       `engineering-playbook.md` §7.2).
-- [ ] Rust native tests (`engineering-playbook.md` §3.1), at minimum:
-  - [ ] Simple SVG → non-empty `Vec<u8>`.
-  - [ ] Same SVG → identical bytes across two calls (determinism).
-  - [ ] Malformed SVG → error, not panic.
-  - [ ] `<text>` content → error, not payload.
-  - [ ] `<image>` content → error, not payload.
-  - [ ] Round-trip test through `intermediate`'s encode/decode.
-  - [ ] Envelope test: identifier, version, DTO key positions.
-- [ ] Verify resolved Cargo features exclude `text`, `system-fonts`,
+- [x] Rust native tests (`engineering-playbook.md` §3.1), at minimum:
+  - [x] Simple SVG → non-empty `Vec<u8>`.
+  - [x] Same SVG → identical bytes across two calls (determinism).
+  - [x] Malformed SVG → error, not panic.
+  - [x] `<text>` content → error, not payload.
+  - [x] `<image>` content → error, not payload.
+  - [x] Round-trip test through `intermediate`'s encode/decode.
+  - [x] Envelope test: identifier, version, DTO key positions.
+- [x] Verify resolved Cargo features exclude `text`, `system-fonts`,
       `memmap-fonts`, `raster-images` (`engineering-playbook.md` §3.6).
 
 ---

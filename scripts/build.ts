@@ -12,8 +12,8 @@
  */
 
 import { execSync } from "child_process";
-import { readFileSync, writeFileSync, readdirSync, existsSync } from "fs";
-import { join, dirname } from "path";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -36,28 +36,28 @@ function run(cmd: string): string {
 // --- Step 1: Compile svg2usvg to Wasm ---
 console.log("Building svg2usvg Wasm...");
 run(
-  "wasm-pack build crates/svg2usvg --target web --no-default-features --features "
+  "wasm-pack build crates/svg2usvg --target web --no-default-features --features ",
 );
 const svg2usvgWasm = run(
-  "ls crates/svg2usvg/pkg/svg2usvg_bg.wasm"
+  "ls crates/svg2usvg/pkg/svg2usvg_bg.wasm",
 );
 require("fs").copyFileSync(
   join(SCRIPTS_DIR, "crates/svg2usvg/pkg/svg2usvg_bg.wasm"),
-  join(ASSETS_DIR, "svg2usvg_bg.wasm")
+  join(ASSETS_DIR, "svg2usvg_bg.wasm"),
 );
 console.log("  → copied to assets/svg2usvg_bg.wasm");
 
 // --- Step 2: Compile usvg2rgba to Wasm ---
 console.log("Building usvg2rgba Wasm...");
 run(
-  "wasm-pack build crates/usvg2rgba --target web --no-default-features --features "
+  "wasm-pack build crates/usvg2rgba --target web --no-default-features --features ",
 );
 const usvg2rgbaWasm = run(
-  "ls crates/usvg2rgba/pkg/usvg2rgba_bg.wasm"
+  "ls crates/usvg2rgba/pkg/usvg2rgba_bg.wasm",
 );
 require("fs").copyFileSync(
   join(SCRIPTS_DIR, "crates/usvg2rgba/pkg/usvg2rgba_bg.wasm"),
-  join(ASSETS_DIR, "usvg2rgba_bg.wasm")
+  join(ASSETS_DIR, "usvg2rgba_bg.wasm"),
 );
 console.log("  → copied to assets/usvg2rgba_bg.wasm");
 
@@ -68,14 +68,14 @@ console.log("  → copied to assets/usvg2rgba_bg.wasm");
 
 // Generate src/usvg.ts
 const svg2usvgBytes = require("fs").readFileSync(
-  join(SCRIPTS_DIR, "crates/svg2usvg/pkg/svg2usvg_bg.wasm")
+  join(SCRIPTS_DIR, "crates/svg2usvg/pkg/svg2usvg_bg.wasm"),
 );
 const svg2usvgBase64 = svg2usvgBytes.toString("base64");
-const svg2usvgTsContent`...`; // placeholder - actual generation omitted for brevity
+const svg2usvgTsContent = "..."; // placeholder - actual generation omitted for brevity
 
 // Generate src/rgba.ts similarly
 const usvg2rgbaBytes = require("fs").readFileSync(
-  join(SCRIPTS_DIR, "crates/usvg2rgba/pkg/usvg2rgba_bg.wasm")
+  join(SCRIPTS_DIR, "crates/usvg2rgba/pkg/usvg2rgba_bg.wasm"),
 );
 const usvg2rgbaBase64 = usvg2rgbaBytes.toString("base64");
 
