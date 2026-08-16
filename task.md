@@ -129,7 +129,7 @@ This crate is the single source of truth for the versioned DTO and codec
 - [x] `lib.rs`: add the `#[wasm_bindgen]` wrapper exposing `Promise<RgbaResult>`
       with the optional `Usvg2RgbaOptions` shape from `project-constitution.md`
       §4.2 (implementer chooses field/type names).
-  - [ ] ⚠️ **Blocked by wasm-bindgen 0.2 `String::Copy` limitation** — see
+  - [x] wasm-bindgen String/Copy limitation resolved with #[wasm_bindgen(getter_with_clone)]
         `docs/plans/usvg2rgba-wasm-bindgen-blocker.md` for detailed analysis
         and proposed solutions.
 - [ ] Confirm no PNG/WebP/JPEG encoder or decoder anywhere in this crate
