@@ -119,12 +119,58 @@ This is the most error-prone approach and creates maintenance burden. The trait 
 
 ## Decision
 
-**Short-term:** Implement Solution 3 (replace `String` with `JsValue` in the struct definitions). This requires the least code changes and preserves the existing `#[wasm_bindgen]` derive structure.
+The root-cause analysis is correct (wasm-bindgen's default field-getter
+generation requires `Copy`, and `String` does not implement `Copy`), but this
+is **not** a wasm-bindgen 0.2 version limitation. wasm-bindgen 0.2 already
+ships a struct-level attribute for exactly this case:
+`#[wasm_bindgen(getter_with_clone)]`. When applied to a struct, it generates
+field getters that `.clone()` the value instead of requiring `Copy`, which
+works for `String`, `Vec<u8>`, and any other `Clone` type.
 
-**Long-term:** Plan a wasm-bindgen version upgrade (Solution 1) for the next major release cycle, which will fully resolve the issue and allow the derive macros to work naturally.
+**Adopted solution:** add `#[wasm_bindgen(getter_with_clone)]` to both
+`Usvg2RgbaOptions` and `RgbaResult`:
+
+```rust
+#[wasm_bindgen(getter_with_clone)]
+pub struct Usvg2RgbaOptions {
+    pub alpha_mode: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
+#[wasm_bindgen(getter_with_clone)]
+pub struct RgbaResult {
+    pub pixels: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub alpha_mode: String,
+}
+```
+
+This requires no change to the `wasm-bindgen` version pin in the workspace
+`Cargo.toml`, keeps `alpha_mode` as a type-safe `String` rather than
+`JsValue`, and keeps the field on the public API surface as specified in
+`docs/project-constitution.md` §4.2. No other part of `crates/usvg2rgba` (the
+native `core.rs` logic) needs to change.
+
+**Rejected, and why:**
+
+- *Upgrade wasm-bindgen (former Solution 1).* Unnecessary — the attribute
+  above already solves this in the pinned 0.2 line. A version bump would add
+  unrelated risk to the build pipeline for no benefit.
+- *Manually implement the ABI traits (former Solution 2).* Unnecessary and
+  error-prone; `getter_with_clone` is the mechanism wasm-bindgen provides for
+  this exact situation.
+- *Replace `String` with `JsValue` (former Solution 3).* Unnecessary and a
+  regression — it would drop compile-time type safety for `alpha_mode`
+  without any offsetting benefit, now that `getter_with_clone` is available.
+- *Remove `alpha_mode` from the public struct (former Solution 4).* Rejected
+  — it would silently drop an API guarantee (`project-constitution.md` §4.2,
+  §5.2) rather than fix the actual blocker.
 
 ## File Reference
 
 This document is located at: `docs/plans/usvg2rgba-wasm-bindgen-blocker.md`
 
-It should be reviewed during the next planning session to decide which solution to implement.
+Status: **resolved**. No further planning-session review is needed for this
+specific blocker; proceed with implementation per `task.md` §4.
