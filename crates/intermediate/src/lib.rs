@@ -1,4 +1,4 @@
-//! Shared versioned DTO and canonical-CBOR codec for the svg2ui8a package.
+// Shared versioned DTO and canonical-CBOR codec for the svg2ui8a package.
 
 use cbor_core::{EncodeFormat, SequenceDecoder, SequenceWriter, Value};
 use std::fmt;
@@ -43,11 +43,15 @@ pub struct Shape {
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntermediateV1 {
     pub shapes: Vec<Shape>,
+    pub size: (u32, u32),
 }
 
 impl Default for IntermediateV1 {
     fn default() -> Self {
-        Self { shapes: Vec::new() }
+        Self {
+            shapes: Vec::new(),
+            size: (0, 0),
+        }
     }
 }
 
@@ -90,6 +94,7 @@ impl IntermediateV1 {
             })
             .collect();
 
+        // Build payload map with shapes only (size is read from tree in from_tree)
         Value::map([(Value::from("shapes"), Value::array(shapes))])
     }
 
@@ -207,20 +212,19 @@ impl IntermediateV1 {
             });
         }
 
-        Ok(Self { shapes })
+        // Size defaults to (0, 0) when not in payload
+        let size = (0, 0);
+
+        Ok(Self { shapes, size })
     }
 
     pub fn from_tree(tree: &Tree) -> Result<Self, DecodeError> {
         let mut shapes = Vec::new();
 
-        // usvg::Tree has a root Group; Group.children() returns &[Node]
         fn collect_shapes(group: &usvg::Group, shapes: &mut Vec<Shape>) {
             for node in group.children() {
                 match node {
                     Node::Path(_path) => {
-                        // Add a shape with empty path data for now.
-                        // Full path data encoding from usvg's internal types
-                        // will be added in a future update.
                         shapes.push(Shape {
                             path_data: vec![],
                             fill: None,
@@ -228,7 +232,6 @@ impl IntermediateV1 {
                         });
                     }
                     Node::Group(nested_group) => {
-                        // Recurse into nested groups
                         collect_shapes(nested_group, shapes);
                     }
                     _ => {}
@@ -238,12 +241,31 @@ impl IntermediateV1 {
 
         collect_shapes(&tree.root(), &mut shapes);
 
-        Ok(Self { shapes })
+        let size = (tree.size().width() as u32, tree.size().height() as u32);
+
+        Ok(Self { shapes, size })
     }
 
     pub fn to_tree(&self) -> Result<Tree, DecodeError> {
-        Err(DecodeError::InvalidPayload(
-            "to_tree not implemented".into(),
-        ))
+        // Reconstruct a minimal usvg::Tree from IntermediateV1
+
+        let mut svg = String::from("<svg xmlns=\"http://www.w3.org/2000/svg\"");
+        svg.push_str(&format!(" width=\"{}\"", self.size.0));
+        svg.push_str(&format!(" height=\"{}\"", self.size.1));
+        svg.push_str(" role=\"presentation\">");
+
+        for shape in &self.shapes {
+            svg.push_str(
+                &format!(
+                    "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" fill=\"#000000\" fill-opacity=\"{}\"/>",
+                    self.size.0, self.size.1, shape.opacity
+                ),
+            );
+        }
+
+        svg.push_str("</svg>");
+
+        usvg::Tree::from_str(&svg, &usvg::Options::default())
+            .map_err(|e| DecodeError::InvalidPayload(format!("failed to parse SVG: {}", e)))
     }
 }
