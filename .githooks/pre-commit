@@ -1,0 +1,8 @@
+#!/bin/sh
+# Pre-commit hook (enabled via `git config core.hooksPath .githooks`).
+# Runs the two formatter checks and rejects the commit if either fails.
+
+set -e
+
+deno fmt --check
+cargo fmt --check
