@@ -2,7 +2,8 @@
 
 use cbor_core::{EncodeFormat, SequenceDecoder, SequenceWriter, Value};
 use std::fmt;
-use usvg::{Node, Tree};
+use usvg::tiny_skia_path::PathSegment;
+use usvg::{Group, Node, Path, Tree};
 
 const FORMAT_IDENTIFIER: &str = "svg2ui8a/usvg";
 const FORMAT_VERSION: u8 = 1;
@@ -253,26 +254,7 @@ impl IntermediateV1 {
 
     pub fn from_tree(tree: &Tree) -> Result<Self, DecodeError> {
         let mut shapes = Vec::new();
-
-        fn collect_shapes(group: &usvg::Group, shapes: &mut Vec<Shape>) {
-            for node in group.children() {
-                match node {
-                    Node::Path(_path) => {
-                        shapes.push(Shape {
-                            path_data: vec![],
-                            fill: None,
-                            opacity: 1.0,
-                        });
-                    }
-                    Node::Group(nested_group) => {
-                        collect_shapes(nested_group, shapes);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        collect_shapes(&tree.root(), &mut shapes);
+        collect_shapes(&tree.root(), 1.0, &mut shapes);
 
         let size = (tree.size().width() as u32, tree.size().height() as u32);
 
@@ -292,17 +274,83 @@ impl IntermediateV1 {
                 Some(Paint::Color(color)) => format!("#{:06x}", color),
                 None => "none".to_string(),
             };
-            svg.push_str(
-                &format!(
-                    "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" fill=\"{}\" fill-opacity=\"{}\"/>",
-                    self.size.0, self.size.1, fill, shape.opacity
-                ),
-            );
+            if shape.path_data.is_empty() {
+                // Empty path data is the "fill the whole canvas" shorthand
+                // (used by the consumer crate's native tests).
+                svg.push_str(
+                    &format!(
+                        "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" fill=\"{}\" fill-opacity=\"{}\"/>",
+                        self.size.0, self.size.1, fill, shape.opacity
+                    ),
+                );
+            } else {
+                let d = String::from_utf8_lossy(&shape.path_data);
+                svg.push_str(&format!(
+                    "<path d=\"{}\" fill=\"{}\" fill-opacity=\"{}\"/>",
+                    d, fill, shape.opacity
+                ));
+            }
         }
 
         svg.push_str("</svg>");
 
         usvg::Tree::from_str(&svg, &usvg::Options::default())
             .map_err(|e| DecodeError::InvalidPayload(format!("failed to parse SVG: {}", e)))
+    }
+}
+
+/// Serialize a usvg path's geometry into an SVG `d` string, flattened into
+/// canvas coordinates by the path's absolute transform.
+fn path_data_to_svg(path: &Path) -> Vec<u8> {
+    let Some(data) = path.data().clone().transform(path.abs_transform()) else {
+        return vec![];
+    };
+    let mut d = String::new();
+    for segment in data.segments() {
+        match segment {
+            PathSegment::MoveTo(p) => d.push_str(&format!("M {} {} ", p.x, p.y)),
+            PathSegment::LineTo(p) => d.push_str(&format!("L {} {} ", p.x, p.y)),
+            PathSegment::QuadTo(p0, p1) => {
+                d.push_str(&format!("Q {} {} {} {} ", p0.x, p0.y, p1.x, p1.y));
+            }
+            PathSegment::CubicTo(p0, p1, p2) => {
+                d.push_str(&format!(
+                    "C {} {} {} {} {} {} ",
+                    p0.x, p0.y, p1.x, p1.y, p2.x, p2.y
+                ));
+            }
+            PathSegment::Close => d.push_str("Z "),
+        }
+    }
+    d.into_bytes()
+}
+
+fn color_to_u32(color: &usvg::Color) -> u32 {
+    ((color.red as u32) << 16) | ((color.green as u32) << 8) | color.blue as u32
+}
+
+/// Walk a group, accumulating group opacity, and collect the shapes this
+/// package supports: paths with a solid-color fill. Shapes that cannot be
+/// represented (no fill, gradient/pattern paint) are skipped.
+fn collect_shapes(group: &Group, opacity: f32, shapes: &mut Vec<Shape>) {
+    let opacity = opacity * group.opacity().get();
+    for node in group.children() {
+        match node {
+            Node::Path(path) => {
+                let Some(fill) = path.fill() else {
+                    continue;
+                };
+                let usvg::Paint::Color(color) = fill.paint() else {
+                    continue;
+                };
+                shapes.push(Shape {
+                    path_data: path_data_to_svg(path),
+                    fill: Some(Paint::Color(color_to_u32(color))),
+                    opacity: opacity * fill.opacity().get(),
+                });
+            }
+            Node::Group(nested) => collect_shapes(nested, opacity, shapes),
+            _ => {}
+        }
     }
 }

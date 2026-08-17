@@ -13,3 +13,4 @@ wasm-bindgen = { workspace = true }
 
 [dev-dependencies]
 cbor-core = { workspace = true }
+svg2usvg = { path = "../svg2usvg" }

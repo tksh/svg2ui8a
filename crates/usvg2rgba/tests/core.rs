@@ -182,3 +182,37 @@ fn renderer_is_deterministic_across_calls() {
     assert_eq!(result1.pixels, result2.pixels);
     assert_eq!(result1, result2);
 }
+
+#[test]
+fn end_to_end_svg_rasterizes_to_expected_color() {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ff0000"/></svg>"##;
+    let bytes = svg2usvg::svg(svg).expect("svg2usvg should succeed");
+
+    // The bytes must carry real geometry now: decode and confirm the shape is
+    // a full-canvas red path, not a blank placeholder.
+    let dto = intermediate::IntermediateV1::decode(&bytes).expect("decode should succeed");
+    assert_eq!(dto.size, (10, 10));
+    assert_eq!(dto.shapes.len(), 1);
+    assert!(
+        !dto.shapes[0].path_data.is_empty(),
+        "geometry must be present"
+    );
+    assert_eq!(
+        dto.shapes[0].fill,
+        Some(intermediate::Paint::Color(0xff0000))
+    );
+
+    let result = rasterize(&bytes, &options(0, 0, "straight")).expect("rasterize should succeed");
+    assert_eq!((result.width, result.height), (10, 10));
+
+    // Non-blank and the expected color: every pixel is opaque red.
+    assert_eq!(
+        &result.pixels[0..4],
+        &[255, 0, 0, 255],
+        "first pixel should be opaque red"
+    );
+    assert!(
+        result.pixels.chunks(4).all(|px| px == &[255, 0, 0, 255]),
+        "every pixel should be opaque red, got a blank or wrong-colored canvas"
+    );
+}

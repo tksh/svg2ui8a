@@ -14,7 +14,7 @@ pub use svg_core::svg;
 #[cfg(test)]
 mod tests {
     use super::svg;
-    use intermediate::IntermediateV1;
+    use intermediate::{IntermediateV1, Paint};
 
     #[test]
     fn simple_svg_returns_non_empty() {
@@ -66,14 +66,30 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_through_intermediate() {
-        let result = svg("<svg><rect width=\"100\" height=\"100\" fill=\"red\"/></svg>").unwrap();
-        // Decode via intermediate
-        let intermediate = IntermediateV1::decode(&result).expect("decode should succeed");
-        // Re-encode
-        let re_encoded = intermediate.encode();
-        // Should produce valid CBOR
-        assert!(!re_encoded.is_empty());
+    fn round_trip_through_intermediate_is_content_verifying() {
+        let svg_str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10"><rect x="2" y="2" width="6" height="6" fill="#ff0000" opacity="0.5"/></svg>"##;
+        let bytes = svg(svg_str).expect("svg should convert");
+        let intermediate = IntermediateV1::decode(&bytes).expect("decode should succeed");
+
+        assert_eq!(intermediate.size, (10, 10));
+        assert_eq!(intermediate.shapes.len(), 1, "expected exactly one shape");
+
+        let shape = &intermediate.shapes[0];
+        assert!(
+            !shape.path_data.is_empty(),
+            "geometry must be present in path_data"
+        );
+        assert_eq!(shape.fill, Some(Paint::Color(0xff0000)));
+        assert!(
+            (shape.opacity - 0.5).abs() < 1e-3,
+            "opacity should be 0.5, got {}",
+            shape.opacity
+        );
+
+        // encode → decode → the same DTO (content-preserving round trip).
+        let re_decoded =
+            IntermediateV1::decode(&intermediate.encode()).expect("re-encode should decode");
+        assert_eq!(re_decoded, intermediate);
     }
 
     #[test]

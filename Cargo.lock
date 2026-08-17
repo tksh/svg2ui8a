@@ -385,6 +385,7 @@ dependencies = [
  "cbor-core",
  "intermediate",
  "resvg",
+ "svg2usvg",
  "wasm-bindgen",
 ]
 
