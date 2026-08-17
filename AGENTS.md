@@ -110,9 +110,17 @@ their choices.
 - **Async functions return `Promise<T>`.** Sync functions return `T`. No
   `// @ts-ignore`, no `any` to escape type errors. If a type error is real, fix
   the types.
-- **Formatting is non-negotiable.** The agent formats the files it has changed.
-  If `deno fmt` would change lines the agent did not touch, those lines are left
-  alone (revert any incidental changes before committing).
+- **Formatting is non-negotiable, and it is enforced mechanically, not by
+  convention.** A git pre-commit hook (`.githooks/pre-commit`, enabled via
+  `git config core.hooksPath .githooks` — run this once in any fresh checkout)
+  runs `deno fmt --check` and `cargo fmt --check`, and rejects the commit if
+  either fails. Before proposing any commit, run `deno task fmt`
+  (`cargo fmt && deno fmt`) on the files you changed. If `deno fmt` or
+  `cargo fmt` would change lines you did not touch, that means the repository
+  already had a formatting debt on those lines — leave them for a dedicated,
+  formatting-only commit (`chore: deno fmt`, or similar) rather than folding
+  them into your logic change. Never mix a large reflow with a behavior change
+  in the same commit.
 - **Comments explain _why_, not _what_.** The code shows _what_.
 - **No new top-level files unless the plan calls for one.** The human-approved
   plan is the authority for what files exist.
