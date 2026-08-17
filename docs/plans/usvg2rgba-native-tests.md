@@ -3,10 +3,10 @@
 ## Status
 
 `task.md` §4 is fully checked except the "Rust native tests
-(`engineering-playbook.md` §3.2)" block (10 unchecked items). Implementing
-those tests requires fixing several bugs in the current `usvg2rgba` /
-`intermediate` code, because the tests assert behavior that is not yet
-implemented. This plan covers both the fixes and the tests.
+(`engineering-playbook.md` §3.2)" block (10 unchecked items). Implementing those
+tests requires fixing several bugs in the current `usvg2rgba` / `intermediate`
+code, because the tests assert behavior that is not yet implemented. This plan
+covers both the fixes and the tests.
 
 ## Bugs discovered that block the tests
 
@@ -26,8 +26,8 @@ implemented. This plan covers both the fixes and the tests.
    must un-premultiply; byte order must be R,G,B,A. Blocks the alpha tests.
 5. **Sizing math is wrong for the single-dimension cases** (divides by the
    aspect ratio instead of multiplying), and **no scale transform is applied**
-   to the render, so sized output would not scale the drawing. Blocks the
-   sizing tests.
+   to the render, so sized output would not scale the drawing. Blocks the sizing
+   tests.
 6. **`RgbaResult` has no `alpha_mode` field.** The constitution (§4.2) requires
    the result to carry the alpha mode of the returned pixels. This is part of
    §4's "Return dimensions and alpha-mode metadata alongside `pixels`" item.
@@ -37,8 +37,8 @@ implemented. This plan covers both the fixes and the tests.
 Constitution §4.3 and playbook §3.2 both read literally: when only one of
 `width`/`height` is given, the other dimension is the **natural SVG value**
 (`width × natural_h`; `natural_w × height`). The approved
-`docs/plans/baseline-implementation.md` instead said "one set → the other
-scaled by the natural aspect ratio". These differ:
+`docs/plans/baseline-implementation.md` instead said "one set → the other scaled
+by the natural aspect ratio". These differ:
 
 - literal: natural 20×10, `width=100` → **100×10**; `height=100` → **20×100**
 - aspect-preserving: natural 20×10, `width=100` → **100×50**; `height=100` →
@@ -67,9 +67,9 @@ put in `task.md` and the playbook. **Confirm or override.**
      per constitution §4.2). Add `alpha_mode` to the wasm `RgbaResult`.
 4. `crates/usvg2rgba/Cargo.toml`
    - `crate-type = ["cdylib", "rlib"]` (integration tests need an `rlib`).
-   - dev-dependency `cbor-core` (workspace). Justified: it is the mandated
-     codec (constitution §3.7) and already a workspace dependency; needed only
-     to construct malformed-envelope fixtures (unknown identifier, unsupported
+   - dev-dependency `cbor-core` (workspace). Justified: it is the mandated codec
+     (constitution §3.7) and already a workspace dependency; needed only to
+     construct malformed-envelope fixtures (unknown identifier, unsupported
      version, malformed DTO, unsupported variant).
 5. `crates/usvg2rgba/tests/core.rs` (new) — the 10 tests.
 6. `task.md` — check off the §4 native-test items as they pass.
@@ -84,8 +84,8 @@ reuse the envelope-construction helpers).
    `pixels.len() == width * height * 4`.
 2. Width-only: `width=100`, natural 20×10 → **100×10**.
 3. Height-only: `height=100`, natural 20×10 → **20×100**.
-4. Both set, non-uniform aspect: `width=100, height=30`, natural 20×10 →
-   exactly 100×30.
+4. Both set, non-uniform aspect: `width=100, height=30`, natural 20×10 → exactly
+   100×30.
 5. Non-canonical / non-CBOR / non-package payload → error, not panic.
 6. Unknown identifier / unsupported version / malformed DTO / unsupported DTO
    variant → error, not panic.

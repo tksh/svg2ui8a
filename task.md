@@ -1,9 +1,9 @@
 # `@tksh/svg2ui8a` — Implementation Task List
 
 This checklist turns `AGENTS.md`, `docs/project-constitution.md`,
-`docs/system-architecture.md`, and `docs/engineering-playbook.md`
-into a concrete, ordered build plan. It assumes the repository currently
-contains only documentation (no source yet).
+`docs/system-architecture.md`, and `docs/engineering-playbook.md` into a
+concrete, ordered build plan. It assumes the repository currently contains only
+documentation (no source yet).
 
 Process reminder (`engineering-playbook.md` §4): draft a plan in
 `docs/plans/baseline-implementation.md` referencing the constitution section
@@ -117,21 +117,22 @@ This crate is the single source of truth for the versioned DTO and codec
   - [x] Decode + semantically validate via `intermediate::decode`.
   - [x] Reconstruct a supported `usvg::Tree` from `IntermediateV1`.
   - [x] Rasterize with feature-disabled `resvg` into a `tiny_skia::Pixmap`.
-  - [x] Apply sizing rule: both omitted → natural size; one set → other derived from natural size; both set → exact non-uniform scaling
-        from natural size; both set → exact non-uniform scaling
-        (`project-constitution.md` §4.3).
+  - [x] Apply sizing rule: both omitted → natural size; one set → other derived
+        from natural size; both set → exact non-uniform scaling from natural
+        size; both set → exact non-uniform scaling (`project-constitution.md`
+        §4.3).
   - [x] Zero-initialize the buffer before drawing (`project-constitution.md`
         §5.2).
   - [x] Default to straight (non-premultiplied) alpha; support a
-        premultiplied/"as-is" option (`project-constitution.md`
-        §4.2, §5.2).
+        premultiplied/"as-is" option (`project-constitution.md` §4.2, §5.2).
   - [x] Return dimensions and alpha-mode metadata alongside `pixels`.
 - [x] `lib.rs`: add the `#[wasm_bindgen]` wrapper exposing `Promise<RgbaResult>`
       with the optional `Usvg2RgbaOptions` shape from `project-constitution.md`
       §4.2 (implementer chooses field/type names).
-  - [x] wasm-bindgen String/Copy limitation resolved with #[wasm_bindgen(getter_with_clone)]
-        `docs/plans/usvg2rgba-wasm-bindgen-blocker.md` for detailed analysis
-        and proposed solutions.
+  - [x] wasm-bindgen String/Copy limitation resolved with
+        #[wasm_bindgen(getter_with_clone)]
+        `docs/plans/usvg2rgba-wasm-bindgen-blocker.md` for detailed analysis and
+        proposed solutions.
 - [x] Confirm no PNG/WebP/JPEG encoder or decoder anywhere in this crate
       (`project-constitution.md` §3.3, §3.4).
 - [x] Rust native tests (`engineering-playbook.md` §3.2), at minimum:
