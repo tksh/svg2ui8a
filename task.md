@@ -154,21 +154,21 @@ This crate is the single source of truth for the versioned DTO and codec
 
 ## 5. Wasm build pipeline
 
-- [ ] Write `scripts/build.ts` (initial scaffolding, not follow-up work —
+- [x] Write `scripts/build.ts` (initial scaffolding, not follow-up work —
       `engineering-playbook.md` §2.1):
-  - [ ] Compile `svg2usvg` to Wasm; copy output to `assets/svg2usvg_bg.wasm`.
-  - [ ] Compile `usvg2rgba` to Wasm; copy output to `assets/usvg2rgba_bg.wasm`.
-  - [ ] Regenerate `src/usvg.ts` and `src/rgba.ts` from templates.
-  - [ ] Run the CDN-free check (§7 below) as part of the build; abort the build
+  - [x] Compile `svg2usvg` to Wasm; copy output to `assets/svg2usvg_bg.wasm`.
+  - [x] Compile `usvg2rgba` to Wasm; copy output to `assets/usvg2rgba_bg.wasm`.
+  - [x] Regenerate `src/usvg.ts` and `src/rgba.ts` from templates.
+  - [x] Run the CDN-free check (§7 below) as part of the build; abort the build
         on failure.
-- [ ] Write `scripts/vendor.ts`: reproducible vendoring of an approved new
+- [x] Write `scripts/vendor.ts`: reproducible vendoring of an approved new
       dependency into `vendor/<name>/`, with a pinned version recorded in a
       `VENDORED.md` (`engineering-playbook.md` §5.1). Not needed for the
       baseline dependency set, but the script must exist and work.
-- [ ] Write `scripts/check-cdn-free.ts`: bundle each of the three subpath entry
+- [x] Write `scripts/check-cdn-free.ts`: bundle each of the three subpath entry
       points and grep for `https://`; fail on any match
       (`engineering-playbook.md` §5.2).
-- [ ] Confirm both Wasm artifacts are independently loadable and neither crate
+- [x] Confirm both Wasm artifacts are independently loadable and neither crate
       is bundled into the other (`project-constitution.md` §3.9).
 
 ---

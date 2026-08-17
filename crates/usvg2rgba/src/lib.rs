@@ -30,6 +30,19 @@ pub struct Usvg2RgbaOptions {
     pub alpha_mode: String,
 }
 
+#[wasm_bindgen]
+impl Usvg2RgbaOptions {
+    /// Default options: straight alpha, natural size.
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Usvg2RgbaOptions {
+        Usvg2RgbaOptions {
+            width: 0,
+            height: 0,
+            alpha_mode: "straight".to_string(),
+        }
+    }
+}
+
 /// Default options function - straight alpha, natural size.
 pub fn usvg2rga_options_default() -> Usvg2RgbaOptions {
     Usvg2RgbaOptions {
