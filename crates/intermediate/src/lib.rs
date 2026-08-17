@@ -94,8 +94,17 @@ impl IntermediateV1 {
             })
             .collect();
 
-        // Build payload map with shapes only (size is read from tree in from_tree)
-        Value::map([(Value::from("shapes"), Value::array(shapes))])
+        // Build payload map with shapes and the natural size.
+        Value::map([
+            (Value::from("shapes"), Value::array(shapes)),
+            (
+                Value::from("size"),
+                Value::array([
+                    Value::from(self.size.0 as f64),
+                    Value::from(self.size.1 as f64),
+                ]),
+            ),
+        ])
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
@@ -212,10 +221,34 @@ impl IntermediateV1 {
             });
         }
 
-        // Size defaults to (0, 0) when not in payload
-        let size = (0, 0);
+        // Read the natural size: [width, height] of finite non-negative floats.
+        let size_value = payload_map
+            .get(&Value::from("size"))
+            .ok_or_else(|| DecodeError::InvalidPayload("missing size".into()))?;
+        let size_array = size_value
+            .as_array()
+            .map_err(|_| DecodeError::InvalidPayload("size is not an array".into()))?;
+        if size_array.len() != 2 {
+            return Err(DecodeError::InvalidPayload(
+                "size array must have two items".into(),
+            ));
+        }
+        let width = size_array[0]
+            .to_f64()
+            .map_err(|_| DecodeError::InvalidPayload("size width is not a float".into()))?;
+        let height = size_array[1]
+            .to_f64()
+            .map_err(|_| DecodeError::InvalidPayload("size height is not a float".into()))?;
+        if !width.is_finite() || !height.is_finite() || width < 0.0 || height < 0.0 {
+            return Err(DecodeError::InvalidPayload(
+                "size must be finite and non-negative".into(),
+            ));
+        }
 
-        Ok(Self { shapes, size })
+        Ok(Self {
+            shapes,
+            size: (width as u32, height as u32),
+        })
     }
 
     pub fn from_tree(tree: &Tree) -> Result<Self, DecodeError> {
@@ -255,10 +288,14 @@ impl IntermediateV1 {
         svg.push_str(" role=\"presentation\">");
 
         for shape in &self.shapes {
+            let fill = match shape.fill {
+                Some(Paint::Color(color)) => format!("#{:06x}", color),
+                None => "none".to_string(),
+            };
             svg.push_str(
                 &format!(
-                    "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" fill=\"#000000\" fill-opacity=\"{}\"/>",
-                    self.size.0, self.size.1, shape.opacity
+                    "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" fill=\"{}\" fill-opacity=\"{}\"/>",
+                    self.size.0, self.size.1, fill, shape.opacity
                 ),
             );
         }

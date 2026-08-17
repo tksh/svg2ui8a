@@ -132,20 +132,20 @@ This crate is the single source of truth for the versioned DTO and codec
   - [x] wasm-bindgen String/Copy limitation resolved with #[wasm_bindgen(getter_with_clone)]
         `docs/plans/usvg2rgba-wasm-bindgen-blocker.md` for detailed analysis
         and proposed solutions.
-- [ ] Confirm no PNG/WebP/JPEG encoder or decoder anywhere in this crate
+- [x] Confirm no PNG/WebP/JPEG encoder or decoder anywhere in this crate
       (`project-constitution.md` §3.3, §3.4).
-- [ ] Rust native tests (`engineering-playbook.md` §3.2), at minimum:
-  - [ ] Simple SVG → pixmap of expected natural size.
-  - [ ] Only `width` set → `width × natural_h`.
-  - [ ] Only `height` set → `natural_w × height`.
-  - [ ] Both set, non-uniform aspect ratio → exact `width × height`.
-  - [ ] Non-canonical / non-CBOR / non-package payload → error, not panic.
-  - [ ] Unknown identifier / unsupported version / malformed DTO / unsupported
+- [x] Rust native tests (`engineering-playbook.md` §3.2), at minimum:
+  - [x] Simple SVG → pixmap of expected natural size.
+  - [x] Only `width` set → `width × natural_h`.
+  - [x] Only `height` set → `natural_w × height`.
+  - [x] Both set, non-uniform aspect ratio → exact `width × height`.
+  - [x] Non-canonical / non-CBOR / non-package payload → error, not panic.
+  - [x] Unknown identifier / unsupported version / malformed DTO / unsupported
         DTO variant → error, not panic.
-  - [ ] Zero-sized SVG → error.
-  - [ ] Default alpha: 50%-opaque red → `(255, 0, 0, 128)`.
-  - [ ] Premultiplied alpha: same input → `(128, 0, 0, 128)`.
-  - [ ] Renderer determinism across two consecutive calls.
+  - [x] Zero-sized SVG → error.
+  - [x] Default alpha: 50%-opaque red → `(255, 0, 0, 128)`.
+  - [x] Premultiplied alpha: same input → `(128, 0, 0, 128)`.
+  - [x] Renderer determinism across two consecutive calls.
 - [x] Verify resolved Cargo features exclude `text`, `system-fonts`,
       `memmap-fonts`, `raster-images`; confirm `tiny-skia` is reached only
       through `resvg` (`engineering-playbook.md` §3.6).

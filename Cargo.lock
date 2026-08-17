@@ -382,6 +382,7 @@ dependencies = [
 name = "usvg2rgba"
 version = "0.1.0"
 dependencies = [
+ "cbor-core",
  "intermediate",
  "resvg",
  "wasm-bindgen",
