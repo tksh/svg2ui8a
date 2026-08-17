@@ -117,7 +117,7 @@ This crate is the single source of truth for the versioned DTO and codec
   - [x] Decode + semantically validate via `intermediate::decode`.
   - [x] Reconstruct a supported `usvg::Tree` from `IntermediateV1`.
   - [x] Rasterize with feature-disabled `resvg` into a `tiny_skia::Pixmap`.
-  - [ ] Apply sizing rule: both omitted → natural size; one set → other derived
+  - [x] Apply sizing rule: both omitted → natural size; one set → other derived from natural size; both set → exact non-uniform scaling
         from natural size; both set → exact non-uniform scaling
         (`project-constitution.md` §4.3).
   - [x] Zero-initialize the buffer before drawing (`project-constitution.md`
