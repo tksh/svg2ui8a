@@ -225,6 +225,23 @@ Required test cases (at minimum):
   check, from the JS side).
 - A malformed SVG rejects the `svg2usvg` promise.
 - A malformed `usvg` payload rejects the `usvg2rgba` promise.
+- `usvg2rgba`'s resolved result is a plain data object: its prototype is
+  `Object.prototype` (not a wasm-bindgen class instance), it exposes no `free()`
+  method and no internal wasm-bindgen pointer field, its `pixels` field is a
+  genuine `Uint8Array` (not a wrapped subclass), and the result survives
+  `structuredClone` and a `JSON.stringify` / `JSON.parse` round-trip without
+  throwing or gaining/losing fields.
+- A result returned from one `usvg2rgba` call is unaffected by a subsequent
+  `usvg2rgba` call with different options / output (guards against `pixels`
+  being a live view into reused or freed Wasm linear memory rather than an owned
+  copy).
+- `usvg2rgba`'s `options` parameter accepts a bare object literal (not a
+  wasm-bindgen class instance constructed via `new`), including a partial
+  literal and an empty object `{}`, and `{}` behaves identically to omitting
+  `options` entirely.
+- Neither `src/rgba.ts` nor `src/mod.ts` exports any runtime symbol whose name
+  starts with `__wasm_` (no internal wasm-bindgen glue is reachable from the
+  public subpaths).
 
 ### 3.5 Visual / pixel-equality tests
 
@@ -416,6 +433,16 @@ artifact, not as a dependency of `usvg2rgba`.
 optional. If it fails, the implementer must not "work around" a failure by
 switching formats (constitution §3.7 forbids that) or by editing the
 constitution. They escalate.
+
+### 7.12 Returning a wasm-bindgen class instance instead of a plain object
+
+`usvg2rgba` must resolve to a plain data object, not a wasm-bindgen class
+instance (`docs/project-constitution.md` §4.4). This includes values only
+superficially disguised as plain data — e.g. removing a type export while the
+runtime object is still a class instance carrying a `free()` method and an
+internal wasm-bindgen pointer field. The §3.4 Deno tests catch this by asserting
+the resolved prototype, the absence of `free()` and pointer fields, and
+successful `structuredClone` / `JSON` round-trips.
 
 ---
 
