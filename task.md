@@ -176,15 +176,15 @@ This crate is the single source of truth for the versioned DTO and codec
 
 ## 6. TypeScript surface
 
-- [ ] `src/usvg.ts` (generated, never hand-edited): wraps
+- [x] `src/usvg.ts` (generated, never hand-edited): wraps
       `svg2usvg(svg: string): Promise<Uint8Array>`, manages a single
       `initialized` flag.
-- [ ] `src/rgba.ts` (generated, never hand-edited): wraps
+- [x] `src/rgba.ts` (generated, never hand-edited): wraps
       `usvg2rgba(usvg: Uint8Array, options?: Usvg2RgbaOptions): Promise<RgbaResult>`,
       manages a single `initialized` flag.
-- [ ] `src/mod.ts` (hand-written): re-exports `svg2usvg`, `usvg2rgba`, and the
+- [x] `src/mod.ts` (hand-written): re-exports `svg2usvg`, `usvg2rgba`, and the
       public `RgbaResult` / `Usvg2RgbaOptions` type names.
-- [ ] Confirm neither wrapper adds caching, memoization, pre-warming, a
+- [x] Confirm neither wrapper adds caching, memoization, pre-warming, a
       `dispose()` method, or a class-based API (`project-constitution.md` §4.4,
       `engineering-playbook.md` §7.4, §7.7).
 

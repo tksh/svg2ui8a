@@ -122,6 +122,7 @@ function generateRgbaTs(glue: string, wasm: Uint8Array): string {
       "export function usvg2rgba(usvg, options) {",
       "function __wasm_usvg2rgba(usvg, options) {",
     ],
+    ["export class ", "class "],
   ]);
   return GENERATED_HEADER +
     inlined +
