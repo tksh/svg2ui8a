@@ -219,7 +219,40 @@ This crate is the single source of truth for the versioned DTO and codec
 
 ---
 
-## 8. Formatting, linting, and CI hygiene
+## 8. Browser-verified Wasm tests (Astral, headless Chrome)
+
+`engineering-playbook.md` §3.3 requires headless-browser execution. §7's
+`test:wasm` currently runs entirely inside the Deno runtime and does not launch
+a real browser. This section closes that gap using Astral (CDP, no chromedriver,
+no npm).
+
+- [ ] **8.1 Plan.** Write `docs/plans/wasm-browser-tests.md` per
+      `engineering-playbook.md` §4. Do not implement anything in this step. Wait
+      for explicit approval before starting §8.2.
+- [ ] **8.2 Pinned Chrome acquisition only.** Add a setup script/task that
+      fetches a specific, pinned Chrome build via Astral, with no `sudo`, no
+      `apt`, no npm package added anywhere. Verify it runs and prints the
+      resolved binary path/version. No test harness yet.
+- [ ] **8.3 Minimal harness, one entry point.** A single browser test that loads
+      `src/usvg.ts` in headless Chrome via Astral/CDP and calls `svg2usvg` once,
+      asserting a non-empty `Uint8Array`. Nothing else yet.
+- [ ] **8.4 Second entry point.** Extend the harness to also load `src/rgba.ts`
+      and call `usvg2rgba`, asserting correct `RgbaResult` shape.
+- [ ] **8.5 Full §3.3 required cases.** Fill in the remaining required test
+      cases from `engineering-playbook.md` §3.3 (Promise types, output matches
+      Rust-native core, etc.) inside the browser harness.
+- [ ] **8.6 Wire into `deno task test`.** Add the browser layer to the pipeline
+      and confirm order: `test:rust` → `test:wasm` (Deno-side) → browser layer →
+      `deno test -A`.
+- [ ] **8.7 Document the decision.** Update `engineering-playbook.md` §3.3 to
+      state Astral/CDP as the fixed interpretation of "or equivalent", and add a
+      CHANGELOG "Unreleased" entry.
+- [ ] **8.8 CI note.** Record (in the plan or playbook) what a CI runner would
+      need to do differently from local WSL2, if anything.
+
+---
+
+## 9. Formatting, linting, and CI hygiene
 
 - [ ] `cargo fmt` on all changed `.rs` files.
 - [ ] `deno fmt` on all changed `.ts` / `.md` files.
@@ -230,7 +263,7 @@ This crate is the single source of truth for the versioned DTO and codec
 
 ---
 
-## 9. Documentation and changelog
+## 10. Documentation and changelog
 
 - [x] Add an `Unreleased` entry to `CHANGELOG.md` describing the baseline
       implementation.
@@ -246,7 +279,7 @@ This crate is the single source of truth for the versioned DTO and codec
 
 ---
 
-## 10. Final verification before declaring done
+## 11. Final verification before declaring done
 
 - [ ] All four test layers pass (§7 and §3 above).
 - [ ] `deno task build` succeeds from a clean checkout and regenerates exactly:
