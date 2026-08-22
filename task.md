@@ -236,7 +236,7 @@ no npm).
 - [x] **8.3 Minimal harness, one entry point.** A single browser test that loads
       `src/usvg.ts` in headless Chrome via Astral/CDP and calls `svg2usvg` once,
       asserting a non-empty `Uint8Array`. Nothing else yet.
-- [ ] **8.4 Second entry point.** Extend the harness to also load `src/rgba.ts`
+- [x] **8.4 Second entry point.** Extend the harness to also load `src/rgba.ts`
       and call `usvg2rgba`, asserting correct `RgbaResult` shape.
 - [ ] **8.5 Full §3.3 required cases.** Fill in the remaining required test
       cases from `engineering-playbook.md` §3.3 (Promise types, output matches
