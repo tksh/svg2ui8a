@@ -238,7 +238,7 @@ no npm).
       asserting a non-empty `Uint8Array`. Nothing else yet.
 - [x] **8.4 Second entry point.** Extend the harness to also load `src/rgba.ts`
       and call `usvg2rgba`, asserting correct `RgbaResult` shape.
-- [ ] **8.5 Full §3.3 required cases.** Fill in the remaining required test
+- [x] **8.5 Full §3.3 required cases.** Fill in the remaining required test
       cases from `engineering-playbook.md` §3.3 (Promise types, output matches
       Rust-native core, etc.) inside the browser harness.
 - [ ] **8.6 Wire into `deno task test`.** Add the browser layer to the pipeline
