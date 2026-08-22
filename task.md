@@ -229,7 +229,7 @@ no npm).
 - [x] **8.1 Plan.** Write `docs/plans/wasm-browser-tests.md` per
       `engineering-playbook.md` §4. Do not implement anything in this step. Wait
       for explicit approval before starting §8.2.
-- [ ] **8.2 Pinned Chrome acquisition only.** Add a setup script/task that
+- [x] **8.2 Pinned Chrome acquisition only.** Add a setup script/task that
       fetches a specific, pinned Chrome build via Astral, with no `sudo`, no
       `apt`, no npm package added anywhere. Verify it runs and prints the
       resolved binary path/version. No test harness yet.
