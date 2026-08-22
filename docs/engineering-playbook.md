@@ -191,7 +191,16 @@ Required test cases (at minimum):
 ### 3.3 Rust Wasm tests (`wasm-pack test` or equivalent)
 
 Run via `deno task test:wasm`. These exercise the Wasm binaries in a headless
-browser, ensuring the JS boundary works as expected.
+browser, ensuring the JS boundary works as expected. The "or equivalent" in this
+section is fixed to **Astral-driven headless Chrome via CDP**
+(`jsr:@astral/astral@0.5.6`, pinned Chrome `125.0.6400.0`); no chromedriver, no
+WebDriver, no `npm:` package. The Wasm layer is verified in two complementary
+harnesses: the Deno-side `deno task test:wasm` (`scripts/test-wasm.ts`) and the
+browser-side `deno task test:wasm:browser` (`scripts/test-wasm-browser.ts`)
+which loads the shipped `src/usvg.ts`/`src/rgba.ts` inside headless Chrome via
+Astral and asserts the same two guarantees there. See
+`docs/plans/wasm-browser-tests.md` §§2, 7, 12 for the pin, tradeoff, and CI
+notes.
 
 Required test cases for each Wasm:
 

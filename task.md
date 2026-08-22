@@ -244,7 +244,7 @@ no npm).
 - [x] **8.6 Wire into `deno task test`.** Add the browser layer to the pipeline
       and confirm order: `test:rust` → `test:wasm` (Deno-side) → browser layer →
       `deno test -A`.
-- [ ] **8.7 Document the decision.** Update `engineering-playbook.md` §3.3 to
+- [x] **8.7 Document the decision.** Update `engineering-playbook.md` §3.3 to
       state Astral/CDP as the fixed interpretation of "or equivalent", and add a
       CHANGELOG "Unreleased" entry.
 - [ ] **8.8 CI note.** Record (in the plan or playbook) what a CI runner would
