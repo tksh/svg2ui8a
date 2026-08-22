@@ -192,29 +192,29 @@ This crate is the single source of truth for the versioned DTO and codec
 
 ## 7. Wasm-layer and Deno-layer tests
 
-- [ ] Wasm tests (`deno task test:wasm`, `engineering-playbook.md` §3.3):
-  - [ ] Each Wasm entry point returns the correct `Promise` type.
-  - [ ] Wasm output matches the corresponding Rust-native `core` output for the
+- [x] Wasm tests (`deno task test:wasm`, `engineering-playbook.md` §3.3):
+  - [x] Each Wasm entry point returns the correct `Promise` type.
+  - [x] Wasm output matches the corresponding Rust-native `core` output for the
         same input.
-- [ ] Deno tests (`deno test -A`, `engineering-playbook.md` §3.4):
-  - [ ] `svg2usvg` returns a `Uint8Array`.
-  - [ ] `usvg2rgba` returns `RgbaResult` with
+- [x] Deno tests (`deno test -A`, `engineering-playbook.md` §3.4):
+  - [x] `svg2usvg` returns a `Uint8Array`.
+  - [x] `usvg2rgba` returns `RgbaResult` with
         `pixels.length === width * height * 4`.
-  - [ ] `RgbaResult.alphaMode` reflects the requested (or default) mode.
-  - [ ] End-to-end: `svg2usvg` → `usvg2rgba({ width, height })` produces
+  - [x] `RgbaResult.alphaMode` reflects the requested (or default) mode.
+  - [x] End-to-end: `svg2usvg` → `usvg2rgba({ width, height })` produces
         correctly sized RGBA.
-  - [ ] **`.cbor` file round trip**: write `svg2usvg` output to a fixture
+  - [x] **`.cbor` file round trip**: write `svg2usvg` output to a fixture
         `.cbor` file, read it back as `Uint8Array`, pass unchanged to
         `usvg2rgba`, and confirm the same `RgbaResult`
         (`cbor-file-intermediate.md` "Verification"; straightlines-vision.md
         §2.3's `Deno.readFile` scenario).
-  - [ ] `init` idempotency: repeated calls to one function do not re-initialize;
+  - [x] `init` idempotency: repeated calls to one function do not re-initialize;
         calling both functions does not cross-interfere.
-  - [ ] Determinism: same SVG string → same `usvg` bytes, verified from the JS
+  - [x] Determinism: same SVG string → same `usvg` bytes, verified from the JS
         side.
-  - [ ] Malformed SVG rejects the `svg2usvg` promise.
-  - [ ] Malformed `usvg` payload rejects the `usvg2rgba` promise.
-- [ ] Confirm `deno task test` runs all layers in order: `test:rust` →
+  - [x] Malformed SVG rejects the `svg2usvg` promise.
+  - [x] Malformed `usvg` payload rejects the `usvg2rgba` promise.
+- [x] Confirm `deno task test` runs all layers in order: `test:rust` →
       `test:wasm` → `deno test -A` (`engineering-playbook.md` §3).
 
 ---
