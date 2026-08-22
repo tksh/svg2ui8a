@@ -247,7 +247,7 @@ no npm).
 - [x] **8.7 Document the decision.** Update `engineering-playbook.md` §3.3 to
       state Astral/CDP as the fixed interpretation of "or equivalent", and add a
       CHANGELOG "Unreleased" entry.
-- [ ] **8.8 CI note.** Record (in the plan or playbook) what a CI runner would
+- [x] **8.8 CI note.** Record (in the plan or playbook) what a CI runner would
       need to do differently from local WSL2, if anything.
 
 ---
