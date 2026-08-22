@@ -226,7 +226,7 @@ This crate is the single source of truth for the versioned DTO and codec
 a real browser. This section closes that gap using Astral (CDP, no chromedriver,
 no npm).
 
-- [ ] **8.1 Plan.** Write `docs/plans/wasm-browser-tests.md` per
+- [x] **8.1 Plan.** Write `docs/plans/wasm-browser-tests.md` per
       `engineering-playbook.md` §4. Do not implement anything in this step. Wait
       for explicit approval before starting §8.2.
 - [ ] **8.2 Pinned Chrome acquisition only.** Add a setup script/task that
