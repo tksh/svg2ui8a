@@ -233,7 +233,7 @@ no npm).
       fetches a specific, pinned Chrome build via Astral, with no `sudo`, no
       `apt`, no npm package added anywhere. Verify it runs and prints the
       resolved binary path/version. No test harness yet.
-- [ ] **8.3 Minimal harness, one entry point.** A single browser test that loads
+- [x] **8.3 Minimal harness, one entry point.** A single browser test that loads
       `src/usvg.ts` in headless Chrome via Astral/CDP and calls `svg2usvg` once,
       asserting a non-empty `Uint8Array`. Nothing else yet.
 - [ ] **8.4 Second entry point.** Extend the harness to also load `src/rgba.ts`
