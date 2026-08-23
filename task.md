@@ -281,21 +281,21 @@ no npm).
 
 ## 11. Final verification before declaring done
 
-- [ ] All four test layers pass (§7 and §3 above).
-- [ ] `deno task build` succeeds from a clean checkout and regenerates exactly:
+- [x] All four test layers pass (§7 and §3 above).
+- [x] `deno task build` succeeds from a clean checkout and regenerates exactly:
       `assets/svg2usvg_bg.wasm`, `assets/usvg2rgba_bg.wasm`, `src/usvg.ts`,
       `src/rgba.ts`, `src/mod.ts`.
-- [ ] The CDN-free check passes for all three subpath bundles.
-- [ ] Two independent Wasm artifacts exist; neither includes the other's code
+- [x] The CDN-free check passes for all three subpath bundles.
+- [x] Two independent Wasm artifacts exist; neither includes the other's code
       path (`project-constitution.md` §3.9).
-- [ ] Resolved Cargo features for `usvg` and `resvg` exclude `text`,
+- [x] Resolved Cargo features for `usvg` and `resvg` exclude `text`,
       `system-fonts`, `memmap-fonts`, `raster-images` in both artifacts.
-- [ ] A `.cbor` file produced by `svg2usvg`, written to disk, and read back
+- [x] A `.cbor` file produced by `svg2usvg`, written to disk, and read back
       independently of `svg2usvg` rasterizes correctly via `usvg2rgba` —
       confirming the format is usable as a standalone file, not just an
       in-memory handle (this is the property a future Straightlines producer
       would rely on; see straightlines-vision.md §4.1).
-- [ ] No `postcard`, MessagePack, bincode, JSON, PNG, WebP, font, or
+- [x] No `postcard`, MessagePack, bincode, JSON, PNG, WebP, font, or
       raster-image dependency appears anywhere in either Wasm artifact's
       dependency tree.
-- [ ] Report completion per `AGENTS.md` §9.
+- [x] Report completion per `AGENTS.md` §9.
