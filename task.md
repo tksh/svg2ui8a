@@ -299,3 +299,19 @@ no npm).
       raster-image dependency appears anywhere in either Wasm artifact's
       dependency tree.
 - [x] Report completion per `AGENTS.md` §9.
+
+---
+
+## 12. JSR publish readiness
+
+- [x] Draft `docs/plans/jsr-publish-readiness.md` per `engineering-playbook.md`
+      §4 and get human approval before running `deno publish --dry-run`.
+- [x] Verify `jsr.json` fields (`name`, `version`, `exports`) match the actual
+      shipped files (`src/mod.ts`, `src/usvg.ts`, `src/rgba.ts`).
+- [x] Verify `deno.json` imports map centralizes the Astral pin and that no
+      `jsr:` inline specifier remains in `scripts/*.ts`.
+- [x] Run `deno publish --dry-run` (not a real publish) and confirm it reports
+      no errors (README, LICENSE, exports, and file inclusion).
+- [x] Note follow-up after real publish: re-verify the README Quick example via
+      the live `jsr:@tksh/svg2ui8a` import path (not yet published, so deferred
+      — record as post-publish item in the plan, do not run now).

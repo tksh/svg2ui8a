@@ -1,4 +1,29 @@
 {
+  "name": "@tksh/svg2ui8a",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./src/mod.ts",
+    "./usvg": "./src/usvg.ts",
+    "./rgba": "./src/rgba.ts"
+  },
+  "publish": {
+    "exclude": [
+      "AGENTS.md",
+      "task.md",
+      "docs/**",
+      "notes/**",
+      "crates/**",
+      "scripts/**",
+      "tests/**",
+      "Cargo.toml",
+      "Cargo.lock",
+      ".gitignore",
+      ".git",
+      ".git/**",
+      ".githooks/**",
+      "deno.lock"
+    ]
+  },
   "imports": {
     "@astral/astral": "jsr:@astral/astral@0.5.6"
   },
