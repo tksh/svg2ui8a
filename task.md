@@ -254,11 +254,11 @@ no npm).
 
 ## 9. Formatting, linting, and CI hygiene
 
-- [ ] `cargo fmt` on all changed `.rs` files.
-- [ ] `deno fmt` on all changed `.ts` / `.md` files.
-- [ ] `deno task lint` passes.
-- [ ] `deno task check` passes (type-check all `.ts`).
-- [ ] Confirm formatters did not touch lines outside the current change; revert
+- [x] `cargo fmt` on all changed `.rs` files.
+- [x] `deno fmt` on all changed `.ts` / `.md` files.
+- [x] `deno task lint` passes.
+- [x] `deno task check` passes (type-check all `.ts`).
+- [x] Confirm formatters did not touch lines outside the current change; revert
       any incidental reformatting (`engineering-playbook.md` §1).
 
 ---

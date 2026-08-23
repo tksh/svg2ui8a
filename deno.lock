@@ -86,5 +86,10 @@
     "@zip-js/zip-js@2.8.54": {
       "integrity": "4c99357b3c9bd63c2bc5e94e4703a493653e12b5d955aee19570881da71208f2"
     }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@astral/astral@0.5.6"
+    ]
   }
 }

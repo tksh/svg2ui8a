@@ -16,7 +16,7 @@ import {
   getDefaultCachePath,
   launch,
   SUPPORTED_VERSIONS,
-} from "jsr:@astral/astral@0.5.6";
+} from "@astral/astral";
 
 const EXPECTED_CHROME = "125.0.6400.0";
 

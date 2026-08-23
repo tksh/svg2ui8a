@@ -14,7 +14,7 @@
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { launch, SUPPORTED_VERSIONS } from "jsr:@astral/astral@0.5.6";
+import { launch, SUPPORTED_VERSIONS } from "@astral/astral";
 
 const EXPECTED_CHROME = "125.0.6400.0";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");

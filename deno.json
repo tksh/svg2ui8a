@@ -1,4 +1,7 @@
 {
+  "imports": {
+    "@astral/astral": "jsr:@astral/astral@0.5.6"
+  },
   "tasks": {
     "build": "deno run -A scripts/build.ts",
     "test": "deno task test:rust && deno task test:wasm && deno task test:wasm:browser && deno test -A",
