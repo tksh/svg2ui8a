@@ -5,7 +5,8 @@
 // are assembled directly with `cbor_core`, the mandated codec.
 
 use cbor_core::{EncodeFormat, SequenceWriter, Value};
-use intermediate::{IntermediateV1, Paint, Shape};
+use intermediate::{Group, IntermediateV1, LineCap, LineJoin, Node, Paint, Shape, Stroke};
+use resvg::tiny_skia::{Pixmap, Transform};
 use usvg2rgba::core::{rasterize, RgbaOptions};
 
 fn options(width: u32, height: u32, alpha_mode: &str) -> RgbaOptions {
@@ -19,20 +20,27 @@ fn options(width: u32, height: u32, alpha_mode: &str) -> RgbaOptions {
 /// Valid envelope with no shapes and the given natural size.
 fn natural_cbor(size: (u32, u32)) -> Vec<u8> {
     let dto = IntermediateV1 {
-        shapes: vec![],
+        root: Group {
+            opacity: 1.0,
+            children: vec![],
+        },
         size,
     };
     dto.encode()
 }
 
-/// Valid envelope with a full-canvas red rectangle at the given opacity.
+/// Valid envelope with a full-canvas red rectangle at the given fill opacity.
 fn red_rect_cbor(size: (u32, u32), opacity: f32) -> Vec<u8> {
     let dto = IntermediateV1 {
-        shapes: vec![Shape {
-            path_data: vec![],
-            fill: Some(Paint::Color(0xff0000)),
-            opacity,
-        }],
+        root: Group {
+            opacity: 1.0,
+            children: vec![Node::Shape(Shape {
+                path_data: vec![],
+                fill: Some(Paint::Color(0xff0000)),
+                fill_opacity: opacity,
+                stroke: None,
+            })],
+        },
         size,
     };
     dto.encode()
@@ -51,20 +59,46 @@ fn envelope(identifier: &str, version: u64, payload: Value<'static>) -> Vec<u8> 
     buffer
 }
 
-/// Payload with one shape whose fill tag is unsupported.
-fn unsupported_fill_variant_payload() -> Value<'static> {
+/// A group node map with the given children and opacity.
+fn group_node(children: Vec<Value<'static>>, opacity: f64) -> Value<'static> {
     Value::map([
-        (
-            Value::from("shapes"),
-            Value::array([Value::map([
-                (Value::from("path_data"), Value::from(Vec::<u8>::new())),
-                (
-                    Value::from("fill"),
-                    Value::array([Value::from(5u64), Value::from(0u64)]),
-                ),
-                (Value::from("opacity"), Value::from(1.0f64)),
-            ])]),
-        ),
+        (Value::from("t"), Value::from(1u64)),
+        (Value::from("opacity"), Value::from(opacity)),
+        (Value::from("children"), Value::array(children)),
+    ])
+}
+
+/// A shape node map with individually controlled fields.
+#[allow(clippy::too_many_arguments)]
+fn shape_node(
+    path_data: Value<'static>,
+    fill: Value<'static>,
+    fill_opacity: Value<'static>,
+    stroke: Value<'static>,
+) -> Value<'static> {
+    Value::map([
+        (Value::from("t"), Value::from(0u64)),
+        (Value::from("path_data"), path_data),
+        (Value::from("fill"), fill),
+        (Value::from("fill_opacity"), fill_opacity),
+        (Value::from("stroke"), stroke),
+    ])
+}
+
+fn solid_paint(color: u64) -> Value<'static> {
+    Value::array([Value::from(1u64), Value::from(color)])
+}
+
+/// Payload whose single shape carries an unsupported fill tag.
+fn unsupported_fill_variant_payload() -> Value<'static> {
+    let shape = shape_node(
+        Value::from(Vec::<u8>::new()),
+        Value::array([Value::from(5u64), Value::from(0u64)]),
+        Value::from(1.0f64),
+        Value::from(0u64),
+    );
+    Value::map([
+        (Value::from("root"), group_node(vec![shape], 1.0)),
         (
             Value::from("size"),
             Value::array([Value::from(10.0f64), Value::from(10.0f64)]),
@@ -74,7 +108,7 @@ fn unsupported_fill_variant_payload() -> Value<'static> {
 
 /// Payload missing the `size` field (malformed DTO).
 fn missing_size_payload() -> Value<'static> {
-    Value::map([(Value::from("shapes"), Value::array([Value::from(0u64)]))])
+    Value::map([(Value::from("root"), group_node(vec![], 1.0))])
 }
 
 #[test]
@@ -192,15 +226,18 @@ fn end_to_end_svg_rasterizes_to_expected_color() {
     // a full-canvas red path, not a blank placeholder.
     let dto = intermediate::IntermediateV1::decode(&bytes).expect("decode should succeed");
     assert_eq!(dto.size, (10, 10));
-    assert_eq!(dto.shapes.len(), 1);
-    assert!(
-        !dto.shapes[0].path_data.is_empty(),
-        "geometry must be present"
-    );
-    assert_eq!(
-        dto.shapes[0].fill,
-        Some(intermediate::Paint::Color(0xff0000))
-    );
+    let shapes: Vec<&Shape> = dto
+        .root
+        .children
+        .iter()
+        .filter_map(|node| match node {
+            Node::Shape(shape) => Some(shape),
+            Node::Group(_) => None,
+        })
+        .collect();
+    assert_eq!(shapes.len(), 1);
+    assert!(!shapes[0].path_data.is_empty(), "geometry must be present");
+    assert_eq!(shapes[0].fill, Some(Paint::Color(0xff0000)));
 
     let result = rasterize(&bytes, &options(0, 0, "straight")).expect("rasterize should succeed");
     assert_eq!((result.width, result.height), (10, 10));
@@ -214,5 +251,129 @@ fn end_to_end_svg_rasterizes_to_expected_color() {
     assert!(
         result.pixels.chunks(4).all(|px| px == &[255, 0, 0, 255]),
         "every pixel should be opaque red, got a blank or wrong-colored canvas"
+    );
+}
+
+/// The Straightlines sample artwork (task.md §13).
+const FIXTURE_SVG: &str = include_str!("../../../tests/fixtures/straightlines-sample.svg");
+
+/// No-loss proof for the fixture: rendering the DTO pipeline output must be
+/// byte-identical to rendering the parsed original SVG directly. Any dropped
+/// layer, stroke property, or group-opacity difference shows up here.
+///
+/// Comparison happens in premultiplied space (tiny-skia's native output) so
+/// the reference render needs no conversion.
+#[test]
+fn straightlines_fixture_renders_identical_through_dto_pipeline() {
+    // Reference: parse the original SVG and render it directly.
+    let reference_tree = resvg::usvg::Tree::from_str(FIXTURE_SVG, &resvg::usvg::Options::default())
+        .expect("fixture svg should parse");
+    let mut reference = Pixmap::new(31, 31).expect("reference pixmap");
+    resvg::render(
+        &reference_tree,
+        Transform::identity(),
+        &mut reference.as_mut(),
+    );
+
+    // Pipeline: SVG → DTO → canonical CBOR → decode → reconstructed tree.
+    let bytes = svg2usvg::svg(FIXTURE_SVG).expect("fixture svg should convert");
+    let result = rasterize(&bytes, &options(0, 0, "premultiplied"))
+        .expect("fixture payload should rasterize");
+    assert_eq!((result.width, result.height), (31, 31));
+
+    // Sanity: the canvas must not be blank (the old code lost everything).
+    assert!(
+        result.pixels.chunks(4).any(|px| px[3] != 0),
+        "fixture render must contain visible pixels"
+    );
+
+    assert_eq!(
+        result.pixels,
+        reference.data().to_vec(),
+        "DTO pipeline must be pixel-lossless against a direct render of the original SVG"
+    );
+}
+
+/// The same fixture must also survive a straight-alpha round trip and scaled
+/// rendering without structural loss (sizes are asserted; exact pixels are
+/// covered by the premultiplied golden test above).
+#[test]
+fn straightlines_fixture_straight_alpha_and_scaling() {
+    let bytes = svg2usvg::svg(FIXTURE_SVG).expect("fixture svg should convert");
+
+    let straight =
+        rasterize(&bytes, &options(0, 0, "straight")).expect("fixture payload should rasterize");
+    assert_eq!((straight.width, straight.height), (31, 31));
+    assert_eq!(straight.pixels.len(), 31 * 31 * 4);
+
+    // Center of the white horizontal bar (y=22 row): near-opaque white in
+    // straight mode (stroke-opacity 0.9 → alpha ≈ 230).
+    let idx = (22 * 31 + 15) * 4;
+    let [r, g, b, a] = [
+        straight.pixels[idx],
+        straight.pixels[idx + 1],
+        straight.pixels[idx + 2],
+        straight.pixels[idx + 3],
+    ];
+    assert!(a > 200, "white bar should be ~90%% opaque, got alpha {}", a);
+    assert!(
+        (225..=255).contains(&r) && (225..=255).contains(&g) && (225..=255).contains(&b),
+        "expected near-white pixel, got rgb({}, {}, {})",
+        r,
+        g,
+        b
+    );
+
+    let scaled =
+        rasterize(&bytes, &options(62, 62, "straight")).expect("scaled rasterize should work");
+    assert_eq!((scaled.width, scaled.height), (62, 62));
+    assert_eq!(scaled.pixels.len(), 62 * 62 * 4);
+    assert!(
+        scaled.pixels.chunks(4).any(|px| px[3] != 0),
+        "scaled render must contain visible pixels"
+    );
+}
+
+/// Stroke properties beyond color/width/opacity must survive reconstruction:
+/// dashed strokes render differently from solid ones.
+#[test]
+fn dashed_stroke_differs_from_solid_stroke() {
+    fn stroked_line(dasharray: Option<Vec<f32>>) -> Vec<u8> {
+        let stroke = Stroke {
+            paint: Paint::Color(0x000000),
+            opacity: 1.0,
+            width: 1.0,
+            linecap: LineCap::Butt,
+            linejoin: LineJoin::Miter,
+            miterlimit: 4.0,
+            dasharray,
+            dashoffset: 0.0,
+        };
+        let dto = IntermediateV1 {
+            root: Group {
+                opacity: 1.0,
+                children: vec![Node::Shape(Shape {
+                    path_data: b"M 1 5 L 9 5 ".to_vec(),
+                    fill: None,
+                    fill_opacity: 1.0,
+                    stroke: Some(stroke),
+                })],
+            },
+            size: (10, 10),
+        };
+        dto.encode()
+    }
+
+    let solid = rasterize(&stroked_line(None), &options(0, 0, "straight"))
+        .expect("solid stroke should rasterize");
+    let dashed = rasterize(
+        &stroked_line(Some(vec![1.0, 1.0])),
+        &options(0, 0, "straight"),
+    )
+    .expect("dashed stroke should rasterize");
+
+    assert_ne!(
+        solid.pixels, dashed.pixels,
+        "dash pattern must affect the rendered output"
     );
 }
