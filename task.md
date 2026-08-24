@@ -315,3 +315,36 @@ no npm).
 - [x] Note follow-up after real publish: re-verify the README Quick example via
       the live `jsr:@tksh/svg2ui8a` import path (not yet published, so deferred
       — record as post-publish item in the plan, do not run now).
+
+---
+
+## 13. Intermediate v1 extension: layers (`<g>`), strokes, Straightlines fixture
+
+Plan: `docs/plans/intermediate-v1-groups-strokes.md` (approval required before
+implementation; `engineering-playbook.md` §4). Human-approved corrections:
+package is published as `0.1.0`; change ships toward `0.1.1`; `FORMAT_VERSION`
+stays `1`.
+
+- [x] Draft and get human approval for the plan document.
+- [x] Bump `deno.json` version to `0.1.1`; re-head existing CHANGELOG entries as
+      `## 0.1.0` (published) and open a fresh `Unreleased`.
+- [x] `intermediate`: hierarchical `Node`/`Group` DTO, `Stroke` (+ cap/join
+      enums), rename `Shape.opacity` → `fill_opacity`, encode/decode +
+      validation incl. group-depth limit; round-trip and rejection tests.
+- [x] `from_tree`/`to_tree`: preserve group nesting and group opacity, capture
+      resolved stroke properties, stop dropping stroke-only paths.
+- [x] Update hand-built payload helpers in `usvg2rgba` tests to the new schema;
+      extend rejection cases for stroke fields.
+- [x] Generate `tests/fixtures/straightlines-sample.cbor` (`fixtures:regen`
+      task); structural producer test on the fixture SVG.
+- [x] Golden pixel-equality test: reference resvg render vs DTO pipeline,
+      byte-identical at natural size.
+- [x] Deno-layer tests: committed `.cbor` read-back, byte-identity vs
+      `svg2usvg`, pixel equality vs fresh encode.
+- [x] Add fixture to `SVGS` in `scripts/test-wasm.ts` and
+      `scripts/test-wasm-browser.ts`.
+- [x] `deno task build`: regenerate `assets/*.wasm` and `src/*.ts`; record size
+      delta.
+- [x] Hygiene: `cargo fmt --check`, `deno fmt --check`, `deno task lint`,
+      `deno task check`, full `deno task test`.
+- [x] `CHANGELOG.md` entry for the extension; report per `AGENTS.md` §9.

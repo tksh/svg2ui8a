@@ -1,6 +1,6 @@
 {
   "name": "@tksh/svg2ui8a",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "exports": {
     ".": "./src/mod.ts",
     "./usvg": "./src/usvg.ts",
@@ -34,6 +34,7 @@
     "test:wasm": "deno run -A scripts/test-wasm.ts",
     "test:wasm:browser": "deno run -A scripts/test-wasm-browser.ts",
     "ensure:chrome": "deno run -A scripts/ensure-chrome.ts",
+    "fixtures:regen": "cargo run --quiet --release -p svg2usvg --example dump_core < tests/fixtures/straightlines-sample.svg > tests/fixtures/straightlines-sample.cbor",
     "fmt": "cargo fmt && deno fmt",
     "lint": "deno lint",
     "check": "deno check src/**/*.ts tests/**/*.ts scripts/*.ts"
