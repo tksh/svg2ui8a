@@ -1,12 +1,22 @@
 // Shared versioned DTO and canonical-CBOR codec for the svg2ui8a package.
 
 use cbor_core::{EncodeFormat, SequenceDecoder, SequenceWriter, Value};
+use std::collections::BTreeMap;
 use std::fmt;
 use usvg::tiny_skia_path::PathSegment;
-use usvg::{Group, Node, Path, Tree};
+use usvg::{Group as UsvgGroup, Node as UsvgNode, Path as UsvgPath, Tree};
 
 const FORMAT_IDENTIFIER: &str = "svg2ui8a/usvg";
 const FORMAT_VERSION: u8 = 1;
+
+// Maximum supported group nesting depth. Decode rejects deeper payloads so
+// recursive decoding and tree reconstruction cannot be driven to a stack
+// overflow by adversarial input. Must stay comfortably below cbor_core's own
+// RECURSION_LIMIT (200): each group consumes roughly two CBOR levels
+// (group map -> children array), so ~99 groups would otherwise hit the codec's
+// generic recursion error instead of this explicit, semantically meaningful
+// one.
+pub const MAX_GROUP_DEPTH: usize = 96;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum DecodeError {
@@ -34,25 +44,175 @@ pub enum Paint {
     Color(u32),
 }
 
+/// `stroke-linecap`, mirroring `usvg::LineCap`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LineCap {
+    Butt,
+    Round,
+    Square,
+}
+
+/// `stroke-linejoin`, mirroring `usvg::LineJoin`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LineJoin {
+    Miter,
+    MiterClip,
+    Round,
+    Bevel,
+}
+
+/// A resolved stroke style. All values are the effective per-path values
+/// usvg computed (inheritance already applied upstream).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stroke {
+    pub paint: Paint,
+    pub opacity: f32,
+    pub width: f32,
+    pub linecap: LineCap,
+    pub linejoin: LineJoin,
+    pub miterlimit: f32,
+    pub dasharray: Option<Vec<f32>>,
+    pub dashoffset: f32,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Shape {
     pub path_data: Vec<u8>,
     pub fill: Option<Paint>,
+    pub fill_opacity: f32,
+    pub stroke: Option<Stroke>,
+}
+
+/// A layer: a composited group with its own opacity and ordered children.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Group {
     pub opacity: f32,
+    pub children: Vec<Node>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Node {
+    Shape(Shape),
+    Group(Group),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntermediateV1 {
-    pub shapes: Vec<Shape>,
+    pub root: Group,
     pub size: (u32, u32),
 }
 
 impl Default for IntermediateV1 {
     fn default() -> Self {
         Self {
-            shapes: Vec::new(),
+            root: Group {
+                opacity: 1.0,
+                children: Vec::new(),
+            },
             size: (0, 0),
         }
+    }
+}
+
+fn kv(key: &'static str, value: Value<'static>) -> (Value<'static>, Value<'static>) {
+    (Value::from(key), value)
+}
+
+fn linecap_tag(cap: LineCap) -> u64 {
+    match cap {
+        LineCap::Butt => 0,
+        LineCap::Round => 1,
+        LineCap::Square => 2,
+    }
+}
+
+fn linecap_from_tag(tag: u64) -> Option<LineCap> {
+    match tag {
+        0 => Some(LineCap::Butt),
+        1 => Some(LineCap::Round),
+        2 => Some(LineCap::Square),
+        _ => None,
+    }
+}
+
+fn linejoin_tag(join: LineJoin) -> u64 {
+    match join {
+        LineJoin::Miter => 0,
+        LineJoin::MiterClip => 1,
+        LineJoin::Round => 2,
+        LineJoin::Bevel => 3,
+    }
+}
+
+fn linejoin_from_tag(tag: u64) -> Option<LineJoin> {
+    match tag {
+        0 => Some(LineJoin::Miter),
+        1 => Some(LineJoin::MiterClip),
+        2 => Some(LineJoin::Round),
+        3 => Some(LineJoin::Bevel),
+        _ => None,
+    }
+}
+
+fn paint_to_value(paint: &Paint) -> Value<'static> {
+    match paint {
+        Paint::Color(color) => Value::array([Value::from(1u64), Value::from(*color as u64)]),
+    }
+}
+
+fn stroke_to_value(stroke: &Stroke) -> Value<'static> {
+    let dasharray = match &stroke.dasharray {
+        Some(dashes) => Value::array(
+            dashes
+                .iter()
+                .map(|d| Value::from(*d as f64))
+                .collect::<Vec<_>>(),
+        ),
+        None => Value::from(0u64),
+    };
+    Value::map([
+        kv("paint", paint_to_value(&stroke.paint)),
+        kv("opacity", Value::from(stroke.opacity as f64)),
+        kv("width", Value::from(stroke.width as f64)),
+        kv("linecap", Value::from(linecap_tag(stroke.linecap))),
+        kv("linejoin", Value::from(linejoin_tag(stroke.linejoin))),
+        kv("miterlimit", Value::from(stroke.miterlimit as f64)),
+        kv("dasharray", dasharray),
+        kv("dashoffset", Value::from(stroke.dashoffset as f64)),
+    ])
+}
+
+fn shape_to_value(shape: &Shape) -> Value<'static> {
+    let fill_value = match &shape.fill {
+        Some(paint) => paint_to_value(paint),
+        None => Value::from(0u64),
+    };
+    let stroke_value = match &shape.stroke {
+        Some(stroke) => stroke_to_value(stroke),
+        None => Value::from(0u64),
+    };
+    Value::map([
+        kv("t", Value::from(0u64)),
+        kv("path_data", Value::from(shape.path_data.clone())),
+        kv("fill", fill_value),
+        kv("fill_opacity", Value::from(shape.fill_opacity as f64)),
+        kv("stroke", stroke_value),
+    ])
+}
+
+fn group_to_value(group: &Group) -> Value<'static> {
+    let children: Vec<Value<'static>> = group.children.iter().map(node_to_value).collect();
+    Value::map([
+        kv("t", Value::from(1u64)),
+        kv("opacity", Value::from(group.opacity as f64)),
+        kv("children", Value::array(children)),
+    ])
+}
+
+fn node_to_value(node: &Node) -> Value<'static> {
+    match node {
+        Node::Group(group) => group_to_value(group),
+        Node::Shape(shape) => shape_to_value(shape),
     }
 }
 
@@ -61,7 +221,16 @@ impl IntermediateV1 {
         let mut buffer = Vec::new();
         let mut writer = SequenceWriter::new(&mut buffer, EncodeFormat::Binary);
 
-        let payload = self.to_value();
+        let payload = Value::map([
+            kv("root", group_to_value(&self.root)),
+            kv(
+                "size",
+                Value::array([
+                    Value::from(self.size.0 as f64),
+                    Value::from(self.size.1 as f64),
+                ]),
+            ),
+        ]);
         let top = Value::map([
             (Value::from(0u64), Value::from(FORMAT_IDENTIFIER)),
             (Value::from(1u64), Value::from(FORMAT_VERSION as u64)),
@@ -70,42 +239,6 @@ impl IntermediateV1 {
 
         writer.write_item(&top).unwrap();
         buffer
-    }
-
-    fn to_value(&self) -> Value<'static> {
-        let shapes: Vec<Value<'static>> = self
-            .shapes
-            .iter()
-            .map(|shape| {
-                let fill_value = match shape.fill {
-                    Some(Paint::Color(color)) => {
-                        Value::array([Value::from(1u64), Value::from(color as u64)])
-                    }
-                    None => Value::from(0u64),
-                };
-
-                Value::map([
-                    (
-                        Value::from("path_data"),
-                        Value::from(shape.path_data.clone()),
-                    ),
-                    (Value::from("fill"), fill_value),
-                    (Value::from("opacity"), Value::from(shape.opacity as f64)),
-                ])
-            })
-            .collect();
-
-        // Build payload map with shapes and the natural size.
-        Value::map([
-            (Value::from("shapes"), Value::array(shapes)),
-            (
-                Value::from("size"),
-                Value::array([
-                    Value::from(self.size.0 as f64),
-                    Value::from(self.size.1 as f64),
-                ]),
-            ),
-        ])
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
@@ -150,82 +283,16 @@ impl IntermediateV1 {
         let payload_map = payload_value
             .as_map()
             .map_err(|_| DecodeError::InvalidPayload("payload is not a map".into()))?;
-        let shapes_value = payload_map
-            .get(&Value::from("shapes"))
-            .ok_or_else(|| DecodeError::InvalidPayload("missing shapes".into()))?;
 
-        let shapes_array = shapes_value
-            .as_array()
-            .map_err(|_| DecodeError::InvalidPayload("shapes is not an array".into()))?;
-
-        let mut shapes = Vec::with_capacity(shapes_array.len());
-
-        for item in shapes_array.iter() {
-            let shape_map = item
-                .as_map()
-                .map_err(|_| DecodeError::InvalidPayload("shape item is not a map".into()))?;
-
-            let path_data = shape_map
-                .get(&Value::from("path_data"))
-                .ok_or_else(|| DecodeError::InvalidPayload("missing path_data".into()))?
-                .as_bytes()
-                .map_err(|_| DecodeError::InvalidPayload("path_data is not bytes".into()))?
-                .to_vec();
-
-            let fill_value = shape_map
-                .get(&Value::from("fill"))
-                .ok_or_else(|| DecodeError::InvalidPayload("missing fill".into()))?;
-            let fill = match fill_value.to_u64() {
-                Ok(0) => None,
-                Ok(_) => {
-                    return Err(DecodeError::InvalidPayload(
-                        "fill is not a valid value".into(),
-                    ));
-                }
-                Err(_) => {
-                    let array = fill_value.as_array().map_err(|_| {
-                        DecodeError::InvalidPayload("fill is not a valid value".into())
-                    })?;
-                    if array.len() != 2 {
-                        return Err(DecodeError::InvalidPayload(
-                            "fill array must have two items".into(),
-                        ));
-                    }
-                    let tag = array[0].to_u64().map_err(|_| {
-                        DecodeError::InvalidPayload("fill tag is not unsigned".into())
-                    })?;
-                    let color = array[1].to_u64().map_err(|_| {
-                        DecodeError::InvalidPayload("fill color is not unsigned".into())
-                    })?;
-                    if tag != 1 {
-                        return Err(DecodeError::InvalidPayload("unsupported fill tag".into()));
-                    }
-                    Some(Paint::Color(color as u32))
-                }
-            };
-
-            let opacity = shape_map
-                .get(&Value::from("opacity"))
-                .ok_or_else(|| DecodeError::InvalidPayload("missing opacity".into()))?
-                .to_f64()
-                .map_err(|_| DecodeError::InvalidPayload("opacity is not a float".into()))?
-                as f32;
-
-            if opacity < 0.0 || opacity > 1.0 {
-                return Err(DecodeError::InvalidPayload("opacity out of range".into()));
+        let root_value = field(payload_map, "root")?;
+        let root = match decode_node(root_value, 0)? {
+            Node::Group(group) => group,
+            Node::Shape(_) => {
+                return Err(DecodeError::InvalidPayload("root must be a group".into()));
             }
+        };
 
-            shapes.push(Shape {
-                path_data,
-                fill,
-                opacity,
-            });
-        }
-
-        // Read the natural size: [width, height] of finite non-negative floats.
-        let size_value = payload_map
-            .get(&Value::from("size"))
-            .ok_or_else(|| DecodeError::InvalidPayload("missing size".into()))?;
+        let size_value = field(payload_map, "size")?;
         let size_array = size_value
             .as_array()
             .map_err(|_| DecodeError::InvalidPayload("size is not an array".into()))?;
@@ -247,51 +314,27 @@ impl IntermediateV1 {
         }
 
         Ok(Self {
-            shapes,
+            root,
             size: (width as u32, height as u32),
         })
     }
 
     pub fn from_tree(tree: &Tree) -> Result<Self, DecodeError> {
-        let mut shapes = Vec::new();
-        collect_shapes(&tree.root(), 1.0, &mut shapes);
-
+        let root = collect_group(tree.root(), 0)?;
         let size = (tree.size().width() as u32, tree.size().height() as u32);
-
-        Ok(Self { shapes, size })
+        Ok(Self { root, size })
     }
 
     pub fn to_tree(&self) -> Result<Tree, DecodeError> {
-        // Reconstruct a minimal usvg::Tree from IntermediateV1
-
+        // Reconstruct a minimal usvg::Tree from IntermediateV1. Every value is
+        // emitted explicitly (no reliance on attribute inheritance); groups
+        // carry their own compositing opacity so resvg renders translucent
+        // layers exactly like the original tree.
         let mut svg = String::from("<svg xmlns=\"http://www.w3.org/2000/svg\"");
         svg.push_str(&format!(" width=\"{}\"", self.size.0));
         svg.push_str(&format!(" height=\"{}\"", self.size.1));
         svg.push_str(" role=\"presentation\">");
-
-        for shape in &self.shapes {
-            let fill = match shape.fill {
-                Some(Paint::Color(color)) => format!("#{:06x}", color),
-                None => "none".to_string(),
-            };
-            if shape.path_data.is_empty() {
-                // Empty path data is the "fill the whole canvas" shorthand
-                // (used by the consumer crate's native tests).
-                svg.push_str(
-                    &format!(
-                        "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" fill=\"{}\" fill-opacity=\"{}\"/>",
-                        self.size.0, self.size.1, fill, shape.opacity
-                    ),
-                );
-            } else {
-                let d = String::from_utf8_lossy(&shape.path_data);
-                svg.push_str(&format!(
-                    "<path d=\"{}\" fill=\"{}\" fill-opacity=\"{}\"/>",
-                    d, fill, shape.opacity
-                ));
-            }
-        }
-
+        write_group(&self.root, self.size, &mut svg);
         svg.push_str("</svg>");
 
         usvg::Tree::from_str(&svg, &usvg::Options::default())
@@ -299,9 +342,295 @@ impl IntermediateV1 {
     }
 }
 
+fn field<'a>(
+    map: &'a BTreeMap<Value<'a>, Value<'a>>,
+    key: &'a str,
+) -> Result<&'a Value<'a>, DecodeError> {
+    map.get(&Value::from(key))
+        .ok_or_else(|| DecodeError::InvalidPayload(format!("missing {}", key)))
+}
+
+fn unit_interval(value: &Value, what: &str) -> Result<f32, DecodeError> {
+    let v = value
+        .to_f64()
+        .map_err(|_| DecodeError::InvalidPayload(format!("{} is not a float", what)))?;
+    if !v.is_finite() || !(0.0..=1.0).contains(&v) {
+        return Err(DecodeError::InvalidPayload(format!(
+            "{} out of range",
+            what
+        )));
+    }
+    Ok(v as f32)
+}
+
+fn finite_f32(value: &Value, what: &str) -> Result<f32, DecodeError> {
+    let v = value
+        .to_f64()
+        .map_err(|_| DecodeError::InvalidPayload(format!("{} is not a float", what)))?;
+    if !v.is_finite() {
+        return Err(DecodeError::InvalidPayload(format!(
+            "{} must be finite",
+            what
+        )));
+    }
+    Ok(v as f32)
+}
+
+fn finite_positive(value: &Value, what: &str) -> Result<f32, DecodeError> {
+    let v = finite_f32(value, what)?;
+    if v <= 0.0 {
+        return Err(DecodeError::InvalidPayload(format!(
+            "{} must be positive",
+            what
+        )));
+    }
+    Ok(v)
+}
+
+fn finite_at_least(value: &Value, what: &str, min: f32) -> Result<f32, DecodeError> {
+    let v = finite_f32(value, what)?;
+    if v < min {
+        return Err(DecodeError::InvalidPayload(format!(
+            "{} must be at least {}",
+            what, min
+        )));
+    }
+    Ok(v)
+}
+
+fn decode_color(value: &Value, what: &str) -> Result<u32, DecodeError> {
+    let array = value
+        .as_array()
+        .map_err(|_| DecodeError::InvalidPayload(format!("{} is not a valid value", what)))?;
+    if array.len() != 2 {
+        return Err(DecodeError::InvalidPayload(format!(
+            "{} array must have two items",
+            what
+        )));
+    }
+    let tag = array[0]
+        .to_u64()
+        .map_err(|_| DecodeError::InvalidPayload(format!("{} tag is not unsigned", what)))?;
+    if tag != 1 {
+        return Err(DecodeError::InvalidPayload(format!(
+            "unsupported {} tag",
+            what
+        )));
+    }
+    let color = array[1]
+        .to_u64()
+        .map_err(|_| DecodeError::InvalidPayload(format!("{} color is not unsigned", what)))?;
+    if color > 0xff_ffff {
+        return Err(DecodeError::InvalidPayload(format!(
+            "{} color out of range",
+            what
+        )));
+    }
+    Ok(color as u32)
+}
+
+/// `0` means "none"; `[1, color]` means solid-color paint.
+fn decode_optional_paint(value: &Value, what: &str) -> Result<Option<Paint>, DecodeError> {
+    if value.to_u64() == Ok(0) {
+        return Ok(None);
+    }
+    Ok(Some(Paint::Color(decode_color(value, what)?)))
+}
+
+fn decode_dasharray(value: &Value) -> Result<Option<Vec<f32>>, DecodeError> {
+    if value.to_u64() == Ok(0) {
+        return Ok(None);
+    }
+    let array = value
+        .as_array()
+        .map_err(|_| DecodeError::InvalidPayload("dasharray is not a valid value".into()))?;
+    let mut dashes = Vec::with_capacity(array.len());
+    for item in array.iter() {
+        dashes.push(finite_at_least(item, "dasharray entry", 0.0)?);
+    }
+    Ok(Some(dashes))
+}
+
+fn decode_stroke(value: &Value) -> Result<Stroke, DecodeError> {
+    let map = value
+        .as_map()
+        .map_err(|_| DecodeError::InvalidPayload("stroke is not a map".into()))?;
+
+    let paint = match decode_optional_paint(field(map, "paint")?, "stroke paint")? {
+        Some(paint) => paint,
+        None => {
+            return Err(DecodeError::InvalidPayload(
+                "stroke paint must be present".into(),
+            ));
+        }
+    };
+
+    Ok(Stroke {
+        paint,
+        opacity: unit_interval(field(map, "opacity")?, "stroke opacity")?,
+        width: finite_positive(field(map, "width")?, "stroke width")?,
+        linecap: linecap_from_tag(
+            field(map, "linecap")?
+                .to_u64()
+                .map_err(|_| DecodeError::InvalidPayload("linecap is not unsigned".into()))?,
+        )
+        .ok_or_else(|| DecodeError::InvalidPayload("unknown linecap tag".into()))?,
+        linejoin: linejoin_from_tag(
+            field(map, "linejoin")?
+                .to_u64()
+                .map_err(|_| DecodeError::InvalidPayload("linejoin is not unsigned".into()))?,
+        )
+        .ok_or_else(|| DecodeError::InvalidPayload("unknown linejoin tag".into()))?,
+        miterlimit: finite_at_least(field(map, "miterlimit")?, "stroke miterlimit", 1.0)?,
+        dasharray: decode_dasharray(field(map, "dasharray")?)?,
+        dashoffset: finite_f32(field(map, "dashoffset")?, "stroke dashoffset")?,
+    })
+}
+
+fn decode_shape(map: &BTreeMap<Value, Value>) -> Result<Shape, DecodeError> {
+    let path_data = field(map, "path_data")?
+        .as_bytes()
+        .map_err(|_| DecodeError::InvalidPayload("path_data is not bytes".into()))?
+        .to_vec();
+
+    Ok(Shape {
+        path_data,
+        fill: decode_optional_paint(field(map, "fill")?, "fill")?,
+        fill_opacity: unit_interval(field(map, "fill_opacity")?, "fill_opacity")?,
+        stroke: match field(map, "stroke")? {
+            value if value.to_u64() == Ok(0) => None,
+            value => Some(decode_stroke(value)?),
+        },
+    })
+}
+
+fn decode_node(value: &Value, depth: usize) -> Result<Node, DecodeError> {
+    let map = value
+        .as_map()
+        .map_err(|_| DecodeError::InvalidPayload("node is not a map".into()))?;
+
+    let discriminant = field(map, "t")?
+        .to_u64()
+        .map_err(|_| DecodeError::InvalidPayload("node discriminator is not unsigned".into()))?;
+
+    match discriminant {
+        0 => Ok(Node::Shape(decode_shape(map)?)),
+        1 => {
+            if depth >= MAX_GROUP_DEPTH {
+                return Err(DecodeError::InvalidPayload(
+                    "group nesting exceeds maximum depth".into(),
+                ));
+            }
+            let opacity = unit_interval(field(map, "opacity")?, "group opacity")?;
+            let children_value = field(map, "children")?;
+            let children_array = children_value
+                .as_array()
+                .map_err(|_| DecodeError::InvalidPayload("children is not an array".into()))?;
+            let mut children = Vec::with_capacity(children_array.len());
+            for child in children_array.iter() {
+                children.push(decode_node(child, depth + 1)?);
+            }
+            Ok(Node::Group(Group { opacity, children }))
+        }
+        other => Err(DecodeError::InvalidPayload(format!(
+            "unknown node discriminator: {}",
+            other
+        ))),
+    }
+}
+
+fn linecap_svg(cap: LineCap) -> &'static str {
+    match cap {
+        LineCap::Butt => "butt",
+        LineCap::Round => "round",
+        LineCap::Square => "square",
+    }
+}
+
+fn linejoin_svg(join: LineJoin) -> &'static str {
+    match join {
+        LineJoin::Miter => "miter",
+        LineJoin::MiterClip => "miter-clip",
+        LineJoin::Round => "round",
+        LineJoin::Bevel => "bevel",
+    }
+}
+
+fn write_stroke_attributes(stroke: &Stroke, out: &mut String) {
+    let Paint::Color(color) = stroke.paint;
+    out.push_str(&format!(" stroke=\"#{:06x}\"", color));
+    out.push_str(&format!(" stroke-opacity=\"{}\"", stroke.opacity));
+    out.push_str(&format!(" stroke-width=\"{}\"", stroke.width));
+    out.push_str(&format!(
+        " stroke-linecap=\"{}\"",
+        linecap_svg(stroke.linecap)
+    ));
+    out.push_str(&format!(
+        " stroke-linejoin=\"{}\"",
+        linejoin_svg(stroke.linejoin)
+    ));
+    out.push_str(&format!(" stroke-miterlimit=\"{}\"", stroke.miterlimit));
+    if let Some(dashes) = &stroke.dasharray {
+        let list = dashes
+            .iter()
+            .map(|d| d.to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        out.push_str(&format!(" stroke-dasharray=\"{}\"", list));
+        out.push_str(&format!(" stroke-dashoffset=\"{}\"", stroke.dashoffset));
+    }
+}
+
+fn write_fill_attributes(fill: &Option<Paint>, fill_opacity: f32, out: &mut String) {
+    let fill = match fill {
+        Some(Paint::Color(color)) => format!("#{:06x}", color),
+        None => "none".to_string(),
+    };
+    out.push_str(&format!(
+        " fill=\"{}\" fill-opacity=\"{}\"",
+        fill, fill_opacity
+    ));
+}
+
+fn write_shape(shape: &Shape, size: (u32, u32), out: &mut String) {
+    if shape.path_data.is_empty() {
+        // Empty path data is the "fill the whole canvas" shorthand
+        // (used by the consumer crate's native tests).
+        out.push_str(&format!(
+            "<rect x=\"0\" y=\"0\" width=\"{}\" height=\"{}\"",
+            size.0, size.1
+        ));
+        write_fill_attributes(&shape.fill, shape.fill_opacity, out);
+        if let Some(stroke) = &shape.stroke {
+            write_stroke_attributes(stroke, out);
+        }
+        out.push_str("/>");
+        return;
+    }
+
+    let d = String::from_utf8_lossy(&shape.path_data);
+    out.push_str(&format!("<path d=\"{}\"", d));
+    write_fill_attributes(&shape.fill, shape.fill_opacity, out);
+    if let Some(stroke) = &shape.stroke {
+        write_stroke_attributes(stroke, out);
+    }
+    out.push_str("/>");
+}
+
+fn write_group(group: &Group, size: (u32, u32), out: &mut String) {
+    out.push_str(&format!("<g opacity=\"{}\">", group.opacity));
+    for child in &group.children {
+        match child {
+            Node::Group(nested) => write_group(nested, size, out),
+            Node::Shape(shape) => write_shape(shape, size, out),
+        }
+    }
+    out.push_str("</g>");
+}
+
 /// Serialize a usvg path's geometry into an SVG `d` string, flattened into
 /// canvas coordinates by the path's absolute transform.
-fn path_data_to_svg(path: &Path) -> Vec<u8> {
+fn path_data_to_svg(path: &UsvgPath) -> Vec<u8> {
     let Some(data) = path.data().clone().transform(path.abs_transform()) else {
         return vec![];
     };
@@ -329,28 +658,92 @@ fn color_to_u32(color: &usvg::Color) -> u32 {
     ((color.red as u32) << 16) | ((color.green as u32) << 8) | color.blue as u32
 }
 
-/// Walk a group, accumulating group opacity, and collect the shapes this
-/// package supports: paths with a solid-color fill. Shapes that cannot be
-/// represented (no fill, gradient/pattern paint) are skipped.
-fn collect_shapes(group: &Group, opacity: f32, shapes: &mut Vec<Shape>) {
-    let opacity = opacity * group.opacity().get();
+/// Convert a resolved usvg stroke into the DTO form. Returns `None` when the
+/// stroke paint is not a solid color (gradient/pattern): such a path is
+/// dropped entirely rather than represented with a substituted paint.
+fn stroke_from_usvg(stroke: &usvg::Stroke) -> Option<Stroke> {
+    let usvg::Paint::Color(color) = stroke.paint() else {
+        return None;
+    };
+    Some(Stroke {
+        paint: Paint::Color(color_to_u32(color)),
+        opacity: stroke.opacity().get(),
+        width: stroke.width().get(),
+        linecap: match stroke.linecap() {
+            usvg::LineCap::Butt => LineCap::Butt,
+            usvg::LineCap::Round => LineCap::Round,
+            usvg::LineCap::Square => LineCap::Square,
+        },
+        linejoin: match stroke.linejoin() {
+            usvg::LineJoin::Miter => LineJoin::Miter,
+            usvg::LineJoin::MiterClip => LineJoin::MiterClip,
+            usvg::LineJoin::Round => LineJoin::Round,
+            usvg::LineJoin::Bevel => LineJoin::Bevel,
+        },
+        miterlimit: stroke.miterlimit().get(),
+        dasharray: stroke.dasharray().map(<[f32]>::to_vec),
+        dashoffset: stroke.dashoffset(),
+    })
+}
+
+/// Convert a resolved usvg fill into the DTO form. Returns `None` when the
+/// fill paint is not a solid color.
+fn fill_from_usvg(fill: &usvg::Fill) -> Option<Paint> {
+    match fill.paint() {
+        usvg::Paint::Color(color) => Some(Paint::Color(color_to_u32(color))),
+        _ => None,
+    }
+}
+
+fn shape_from_path(path: &UsvgPath) -> Option<Shape> {
+    let fill = path.fill();
+    let stroke = path.stroke();
+
+    let dto_fill = match fill {
+        Some(fill) => match fill_from_usvg(fill) {
+            Some(paint) => Some(paint),
+            None => return None,
+        },
+        None => None,
+    };
+    let dto_stroke = match stroke {
+        Some(stroke) => match stroke_from_usvg(stroke) {
+            Some(stroke) => Some(stroke),
+            None => return None,
+        },
+        None => None,
+    };
+
+    Some(Shape {
+        path_data: path_data_to_svg(path),
+        fill: dto_fill,
+        fill_opacity: fill.map_or(1.0, |f| f.opacity().get()),
+        stroke: dto_stroke,
+    })
+}
+
+fn collect_group(group: &UsvgGroup, depth: usize) -> Result<Group, DecodeError> {
+    if depth > MAX_GROUP_DEPTH {
+        return Err(DecodeError::InvalidPayload(
+            "group nesting exceeds maximum depth".into(),
+        ));
+    }
+    let mut children = Vec::new();
     for node in group.children() {
         match node {
-            Node::Path(path) => {
-                let Some(fill) = path.fill() else {
-                    continue;
-                };
-                let usvg::Paint::Color(color) = fill.paint() else {
-                    continue;
-                };
-                shapes.push(Shape {
-                    path_data: path_data_to_svg(path),
-                    fill: Some(Paint::Color(color_to_u32(color))),
-                    opacity: opacity * fill.opacity().get(),
-                });
+            UsvgNode::Path(path) => {
+                if let Some(shape) = shape_from_path(path) {
+                    children.push(Node::Shape(shape));
+                }
             }
-            Node::Group(nested) => collect_shapes(nested, opacity, shapes),
+            UsvgNode::Group(nested) => {
+                children.push(Node::Group(collect_group(nested, depth + 1)?));
+            }
             _ => {}
         }
     }
+    Ok(Group {
+        opacity: group.opacity().get(),
+        children,
+    })
 }
