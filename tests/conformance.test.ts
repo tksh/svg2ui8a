@@ -3,8 +3,17 @@
 // rejection of malformed inputs, the end-to-end flow, the `.cbor` file
 // round trip, and init idempotency across the two Wasm modules.
 
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { usvg2rgba, type Usvg2RgbaOptions } from "../src/rgba.ts";
 import { svg2usvg } from "../src/usvg.ts";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const FIXTURE_SVG_PATH = join(ROOT, "tests/fixtures/straightlines-sample.svg");
+const FIXTURE_CBOR_PATH = join(
+  ROOT,
+  "tests/fixtures/straightlines-sample.cbor",
+);
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
   <rect width="10" height="10" fill="#ff0000"/>
@@ -189,5 +198,54 @@ Deno.test("malformed usvg payloads reject the usvg2rgba promise", async () => {
   await assertRejects(
     usvg2rgba(truncated),
     "a truncated payload must reject the usvg2rgba promise",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Straightlines fixture (task.md §13): the committed .cbor must stay a
+// faithful, standalone representation of the committed .svg.
+// ---------------------------------------------------------------------------
+
+const FIXTURE_SVG = await Deno.readTextFile(FIXTURE_SVG_PATH);
+const FIXTURE_CBOR = await Deno.readFile(FIXTURE_CBOR_PATH);
+
+Deno.test("fixture: svg2usvg output is byte-identical to the committed .cbor", async () => {
+  const fresh = await svg2usvg(FIXTURE_SVG);
+  assertBytesEqual(
+    fresh,
+    FIXTURE_CBOR,
+    "svg2usvg(straightlines-sample.svg) must reproduce straightlines-sample.cbor byte-for-byte; run `deno task fixtures:regen` if the format intentionally changed",
+  );
+});
+
+Deno.test("fixture: committed .cbor rasterizes at its natural size as a standalone file", async () => {
+  const result = await usvg2rgba(FIXTURE_CBOR);
+  assert(
+    result.width === 31 && result.height === 31,
+    `expected natural size 31x31, got ${result.width}x${result.height}`,
+  );
+  assert(
+    result.pixels.length === 31 * 31 * 4,
+    `pixels.length must be ${31 * 31 * 4}, got ${result.pixels.length}`,
+  );
+  assert(result.alphaMode === "straight", "default alphaMode must be straight");
+  assert(
+    result.pixels.some((byte, i) => i % 4 === 3 && byte !== 0),
+    "the fixture render must contain visible (non-transparent) pixels",
+  );
+});
+
+Deno.test("fixture: .cbor from disk and fresh svg2usvg output rasterize identically", async () => {
+  const fromDisk = await usvg2rgba(FIXTURE_CBOR);
+  const inMemory = await usvg2rgba(await svg2usvg(FIXTURE_SVG));
+  assert(
+    fromDisk.width === inMemory.width && fromDisk.height === inMemory.height &&
+      fromDisk.alphaMode === inMemory.alphaMode,
+    "fixture payloads must produce identical RgbaResult metadata",
+  );
+  assertBytesEqual(
+    fromDisk.pixels,
+    inMemory.pixels,
+    "fixture payloads must produce identical pixels",
   );
 });

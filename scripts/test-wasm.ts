@@ -18,6 +18,15 @@ import { svg2usvg } from "../src/usvg.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+/**
+ * The Straightlines fixture (task.md §13). Exercised through every layer so
+ * groups (`<g>` with compositing opacity) and full stroke styling are
+ * verified against the native core, not just flat filled rects.
+ */
+const FIXTURE_SVG = await Deno.readTextFile(
+  join(ROOT, "tests", "fixtures", "straightlines-sample.svg"),
+);
+
 /** Test inputs fed identically to the TS entry point and the native core. */
 const SVGS: Array<[string, string]> = [
   [
@@ -28,6 +37,7 @@ const SVGS: Array<[string, string]> = [
     "partial-width bar",
     '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="4" height="10" fill="#ff0000"/></svg>',
   ],
+  ["straightlines fixture (layers + strokes)", FIXTURE_SVG],
 ];
 
 const RGBA_OPTION_SETS: Array<[string, Usvg2RgbaOptions]> = [

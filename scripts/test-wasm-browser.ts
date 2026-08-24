@@ -19,6 +19,15 @@ import { launch, SUPPORTED_VERSIONS } from "@astral/astral";
 const EXPECTED_CHROME = "125.0.6400.0";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+/**
+ * The Straightlines fixture (task.md §13). Exercised through every layer so
+ * groups (`<g>` with compositing opacity) and full stroke styling are
+ * verified against the native core, not just flat filled rects.
+ */
+const FIXTURE_SVG = await Deno.readTextFile(
+  join(ROOT, "tests", "fixtures", "straightlines-sample.svg"),
+);
+
 const SVGS: Array<[string, string]> = [
   [
     "full-canvas rect",
@@ -28,6 +37,7 @@ const SVGS: Array<[string, string]> = [
     "partial-width bar",
     '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="4" height="10" fill="#ff0000"/></svg>',
   ],
+  ["straightlines fixture (layers + strokes)", FIXTURE_SVG],
 ];
 
 type RgbaOpts = { width?: number; height?: number; alphaMode?: string };
