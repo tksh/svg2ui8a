@@ -228,9 +228,11 @@ export function svg2usvg(svg: string): Promise<Uint8Array>;
 
 - Input: an SVG string. No options, no second argument.
 - Output: a `Promise<Uint8Array>` of the CBOR-encoded intermediate.
-- Errors: rejected if SVG parsing fails or if the SVG uses unsupported text or
-  image content. Error type is whatever `wasm-bindgen` produces; consumers are
-  expected to surface it.
+- Errors: rejected if SVG parsing fails; if the SVG uses unsupported text or
+  image content; or if the document does not declare a supported root-level
+  `shape-rendering` (`geometricPrecision` or `crispEdges` for every path; `auto`
+  is accepted as `geometricPrecision`). Error type is whatever `wasm-bindgen`
+  produces; consumers are expected to surface it.
 
 ### 4.2 `usvg2rgba`
 

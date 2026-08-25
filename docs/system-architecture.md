@@ -142,6 +142,9 @@ raster-image decoding is compiled into either artifact.
 The work is:
 
 1. Parse the SVG with feature-disabled `usvg` and reject text or image content.
+   The document must also declare a supported root-level `shape-rendering`
+   (`geometricPrecision` or `crispEdges`, consistently for every path; `auto` is
+   accepted as `geometricPrecision`); anything else is rejected.
 2. Convert the supported tree into `IntermediateV1` in `intermediate`.
 3. Encode its canonical-CBOR envelope with `cbor_core`.
 4. Return the CBOR bytes to the caller.
@@ -228,6 +231,10 @@ The constraints on the choice are:
 The implementation's plan records:
 
 - The version-1 DTO drawing fields and its mapping to the supported tree subset.
+  Besides per-shape fields, the version-1 payload carries one required
+  root-level field, `shape_rendering` (`geometricPrecision` | `crispEdges`),
+  mirroring the document-level `shape-rendering` declaration the producer
+  requires on every input SVG.
 - The mapping between the representation and `cbor_core::Value`.
 - A short rationale (1–3 sentences) for each.
 

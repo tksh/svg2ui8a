@@ -148,6 +148,11 @@ Required test cases (at minimum):
 - A simple SVG produces stable bytes across two consecutive calls.
 - A malformed SVG produces an error, not a panic.
 - SVG containing `<text>` or `<image>` content produces an error, not a payload.
+- SVG without a root-level `shape-rendering` declaration produces an error, not
+  a payload.
+- SVG whose `shape-rendering` is not `geometricPrecision`/`crispEdges` (or
+  `auto`, accepted as `geometricPrecision`) — including inconsistent per-element
+  overrides — produces an error, not a payload.
 - The same SVG string always produces the same bytes (the determinism check from
   `docs/project-constitution.md` §5.3).
 - **Round-trip test**: the chosen internal representation can be encoded and
