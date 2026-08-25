@@ -1,5 +1,5 @@
 /**
- * Wasm-layer tests (engineering-playbook §3.3, task.md §7).
+ * Wasm-layer tests (engineering-playbook §3.3, task.md §16).
  *
  * For each Wasm artifact, exercised through the shipped TS entry point:
  *   1. the entry point returns the correct Promise type, and
@@ -14,42 +14,31 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { svg2rgba, type Svg2RgbaOptions } from "../src/svg2rgba.ts";
-import { svg2stln } from "../src/stln.ts";
-import { stln2rgba, type Stln2RgbaOptions } from "../src/stln-rgba.ts";
+import { svg2usvg } from "../src/svg2usvg.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-/**
- * The Straightlines fixture (task.md §13). Exercised through every layer so
- * groups (`<g>` with compositing opacity) and full stroke styling are
- * verified against the native core, not just flat filled shapes.
- */
-const FIXTURE_SVG = await Deno.readTextFile(
-  join(ROOT, "tests", "fixtures", "straightlines-sample.svg"),
-);
 
 /** Test inputs fed identically to the TS entry point and the native core. */
 const SVGS: Array<[string, string]> = [
   [
-    "full-canvas stroke",
-    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="geometricPrecision"><path d="M 5 0 L 5 10" stroke="#ff0000" stroke-width="10" fill="none"/></svg>',
+    "tiny rect",
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#ff0000"/></svg>',
   ],
   [
-    "partial-width stroke",
-    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="geometricPrecision"><path d="M 2 0 L 2 10" stroke="#ff0000" stroke-width="4" fill="none"/></svg>',
-  ],
-  ["straightlines fixture (layers + strokes)", FIXTURE_SVG],
-  [
-    "diagonal crispEdges",
-    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="crispEdges"><path d="M 2 3 L 29 22" stroke="#000000" stroke-width="1" fill="none"/></svg>',
+    "stroked diagonal",
+    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M 2 3 L 29 22" stroke="#000000" stroke-width="1" fill="none"/></svg>',
   ],
   [
-    "diagonal geometricPrecision",
-    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="geometricPrecision"><path d="M 2 3 L 29 22" stroke="#000000" stroke-width="1" fill="none"/></svg>',
+    "group with opacity",
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><g opacity="0.8"><rect width="10" height="10" fill="#00ff00"/></g></svg>',
+  ],
+  [
+    "gradient fill",
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><defs><linearGradient id="g" x1="0" y1="0" x2="10" y2="0"><stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/></linearGradient></defs><rect width="10" height="10" fill="url(#g)"/></svg>',
   ],
 ];
 
-const RGBA_OPTION_SETS: Array<[string, Stln2RgbaOptions]> = [
+const RGBA_OPTION_SETS: Array<[string, Svg2RgbaOptions]> = [
   ["natural size", {}],
   ["width only", { width: 20 }],
   ["height only", { height: 5 }],
@@ -108,67 +97,22 @@ async function runNativeCore(
   };
 }
 
-async function checkSvg2stln(svgStr: string): Promise<Uint8Array> {
-  const pending = svg2stln(svgStr);
+async function checkSvg2usvg(svgStr: string): Promise<Uint8Array> {
+  const pending = svg2usvg(svgStr);
   assert(
     pending instanceof Promise,
-    "svg2stln must return a Promise<Uint8Array>",
+    "svg2usvg must return a Promise<Uint8Array>",
   );
-  const wasmStln = await pending;
+  const wasmBytes = await pending;
   assert(
-    wasmStln instanceof Uint8Array,
-    "svg2stln must resolve to a Uint8Array",
+    wasmBytes instanceof Uint8Array,
+    "svg2usvg must resolve to a Uint8Array",
   );
 
   const encoder = new TextEncoder();
-  const native = await runNativeCore("svg2stln", [], encoder.encode(svgStr));
-  assertBytesEqual(wasmStln, native.stdout, "svg2stln vs native core");
-  return wasmStln;
-}
-
-async function checkStln2rgba(
-  usvgBytes: Uint8Array,
-  label: string,
-  options: Stln2RgbaOptions,
-): Promise<void> {
-  const pending = stln2rgba(usvgBytes, options);
-  assert(
-    pending instanceof Promise,
-    "stln2rgba must return a Promise<RgbaResult>",
-  );
-  const result = await pending;
-  assert(
-    typeof result.width === "number" && typeof result.height === "number",
-    "stln2rgba must resolve to an RgbaResult with numeric dimensions",
-  );
-  assert(
-    typeof result.alphaMode === "string",
-    "stln2rgba must resolve to an RgbaResult with an alphaMode string",
-  );
-  assert(
-    result.pixels instanceof Uint8Array,
-    "stln2rgba must resolve to an RgbaResult with a Uint8Array pixels field",
-  );
-
-  const native = await runNativeCore(
-    "stln2rgba",
-    [
-      String(options.width ?? 0),
-      String(options.height ?? 0),
-      options.alphaMode ?? "straight",
-    ],
-    usvgBytes,
-  );
-  const [nativeW, nativeH, nativeMode] = native.stderr.trim().split(" ");
-  assert(
-    result.width === Number(nativeW) && result.height === Number(nativeH),
-    `${label}: dimensions differ from native core (${result.width}x${result.height} vs ${nativeW}x${nativeH})`,
-  );
-  assert(
-    result.alphaMode === nativeMode,
-    `${label}: alphaMode differs from native core (${result.alphaMode} vs ${nativeMode})`,
-  );
-  assertBytesEqual(result.pixels, native.stdout, `${label}: pixels`);
+  const native = await runNativeCore("svg2usvg", [], encoder.encode(svgStr));
+  assertBytesEqual(wasmBytes, native.stdout, "svg2usvg vs native core");
+  return wasmBytes;
 }
 
 async function checkSvg2rgba(
@@ -204,17 +148,16 @@ async function checkSvg2rgba(
 
 async function main(): Promise<void> {
   for (const [name, svgStr] of SVGS) {
-    const usvgBytes = await checkSvg2stln(svgStr);
+    const usvgBytes = await checkSvg2usvg(svgStr);
     console.log(
-      `  ✓ svg2stln [${name}]: Wasm output matches native core (${usvgBytes.length} bytes)`,
+      `  ✓ svg2usvg [${name}]: Wasm output matches native core (${usvgBytes.length} bytes)`,
     );
-    for (const [optionLabel, options] of RGBA_OPTION_SETS) {
-      await checkStln2rgba(usvgBytes, `[${name}] ${optionLabel}`, options);
-      console.log(
-        `  ✓ stln2rgba [${name}] ${optionLabel}: Wasm output matches native core`,
-      );
-    }
-    // The one-shot path takes the SVG directly (no intermediate payload).
+    // Verify usvg output is valid UTF-8 XML
+    const decoded = new TextDecoder().decode(usvgBytes);
+    assert(
+      decoded.includes("<svg"),
+      `svg2usvg [${name}]: output must contain <svg`,
+    );
     for (const [optionLabel, options] of RGBA_OPTION_SETS.slice(0, 3)) {
       await checkSvg2rgba(
         svgStr,

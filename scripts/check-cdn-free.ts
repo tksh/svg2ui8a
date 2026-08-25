@@ -57,8 +57,7 @@ export function runCheck(): void {
   const entries = [
     "src/mod.ts",
     "src/svg2rgba.ts",
-    "src/stln.ts",
-    "src/stln-rgba.ts",
+    "src/svg2usvg.ts",
   ];
   let failed = false;
   for (const entry of entries) {
