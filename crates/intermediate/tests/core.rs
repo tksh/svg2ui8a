@@ -1,7 +1,7 @@
 use cbor_core::{EncodeFormat, SequenceWriter, Value};
 use intermediate::{
-    DecodeError, Group, IntermediateV1, LineCap, LineJoin, Node, Paint, Shape, Stroke,
-    MAX_GROUP_DEPTH,
+    DecodeError, Group, IntermediateV1, LineCap, LineJoin, Node, Paint, Shape, ShapeRendering,
+    Stroke, MAX_GROUP_DEPTH,
 };
 
 /// Hand-assembled envelope with a custom identifier / version / payload.
@@ -25,6 +25,8 @@ fn payload_with_root(root: Value<'static>) -> Value<'static> {
             Value::from("size"),
             Value::array([Value::from(10.0f64), Value::from(10.0f64)]),
         ),
+        // geometricPrecision; rejection tests targeting this field override it.
+        (Value::from("shape_rendering"), Value::from(0u64)),
     ])
 }
 
@@ -74,11 +76,37 @@ fn encode_decode_round_trip() {
             })],
         },
         size: (100, 100),
+        shape_rendering: ShapeRendering::GeometricPrecision,
     };
 
     let bytes = intermediate.encode();
     let decoded = IntermediateV1::decode(&bytes).expect("decode should succeed");
     assert_eq!(decoded, intermediate);
+}
+
+#[test]
+fn encode_decode_round_trip_both_shape_renderings() {
+    for rendering in [
+        ShapeRendering::GeometricPrecision,
+        ShapeRendering::CrispEdges,
+    ] {
+        let intermediate = IntermediateV1 {
+            root: Group {
+                opacity: 1.0,
+                children: vec![Node::Shape(Shape {
+                    path_data: b"M 0 0 L 1 1 ".to_vec(),
+                    fill: None,
+                    fill_opacity: 1.0,
+                    stroke: None,
+                })],
+            },
+            size: (10, 10),
+            shape_rendering: rendering,
+        };
+        let decoded =
+            IntermediateV1::decode(&intermediate.encode()).expect("decode should succeed");
+        assert_eq!(decoded, intermediate);
+    }
 }
 
 #[test]
@@ -126,6 +154,7 @@ fn encode_decode_round_trip_nested_groups_and_strokes() {
             ],
         },
         size: (31, 31),
+        shape_rendering: ShapeRendering::CrispEdges,
     };
 
     let bytes = intermediate.encode();
@@ -503,4 +532,45 @@ fn deep_group_nesting_rejected_beyond_limit() {
         }
         other => panic!("expected InvalidPayload, got {:?}", other.map(|_| ())),
     }
+}
+
+#[test]
+fn shape_rendering_rejections() {
+    let base = |extra: Vec<(Value<'static>, Value<'static>)>| {
+        let mut fields = vec![
+            (Value::from("root"), group_node(Vec::<Value>::new(), 1.0f64)),
+            (
+                Value::from("size"),
+                Value::array([Value::from(10.0f64), Value::from(10.0f64)]),
+            ),
+        ];
+        fields.extend(extra);
+        Value::map(fields)
+    };
+
+    // Missing key entirely.
+    let bytes = envelope("svg2ui8a/usvg", 1, base(vec![]));
+    assert!(
+        IntermediateV1::decode(&bytes).is_err(),
+        "missing shape_rendering must be rejected"
+    );
+
+    // Unknown tag.
+    for tag in [2u64, 7, u64::MAX] {
+        let payload = base(vec![(Value::from("shape_rendering"), Value::from(tag))]);
+        let bytes = envelope("svg2ui8a/usvg", 1, payload);
+        assert!(
+            IntermediateV1::decode(&bytes).is_err(),
+            "shape_rendering tag {} must be rejected",
+            tag
+        );
+    }
+
+    // Non-unsigned value.
+    let payload = base(vec![(
+        Value::from("shape_rendering"),
+        Value::from("geometricPrecision"),
+    )]);
+    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    assert!(IntermediateV1::decode(&bytes).is_err());
 }

@@ -63,6 +63,7 @@ pub enum LineJoin {
 
 /// A resolved stroke style. All values are the effective per-path values
 /// usvg computed (inheritance already applied upstream).
+/// A stroke style.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stroke {
     pub paint: Paint,
@@ -73,6 +74,18 @@ pub struct Stroke {
     pub miterlimit: f32,
     pub dasharray: Option<Vec<f32>>,
     pub dashoffset: f32,
+}
+
+/// Root-level rendering hint (`shape-rendering` on the `<svg>` element).
+///
+/// The Straightlines spec requires every document to declare exactly one of
+/// these values. usvg's other resolutions (`auto`, an omitted attribute, or
+/// `optimizeSpeed`) never reach the DTO: `auto` is accepted as
+/// `GeometricPrecision`, and everything else is a producer-side rejection.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ShapeRendering {
+    GeometricPrecision,
+    CrispEdges,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,6 +113,7 @@ pub enum Node {
 pub struct IntermediateV1 {
     pub root: Group,
     pub size: (u32, u32),
+    pub shape_rendering: ShapeRendering,
 }
 
 impl Default for IntermediateV1 {
@@ -110,6 +124,7 @@ impl Default for IntermediateV1 {
                 children: Vec::new(),
             },
             size: (0, 0),
+            shape_rendering: ShapeRendering::GeometricPrecision,
         }
     }
 }
@@ -150,6 +165,21 @@ fn linejoin_from_tag(tag: u64) -> Option<LineJoin> {
         1 => Some(LineJoin::MiterClip),
         2 => Some(LineJoin::Round),
         3 => Some(LineJoin::Bevel),
+        _ => None,
+    }
+}
+
+fn shape_rendering_tag(rendering: ShapeRendering) -> u64 {
+    match rendering {
+        ShapeRendering::GeometricPrecision => 0,
+        ShapeRendering::CrispEdges => 1,
+    }
+}
+
+fn shape_rendering_from_tag(tag: u64) -> Option<ShapeRendering> {
+    match tag {
+        0 => Some(ShapeRendering::GeometricPrecision),
+        1 => Some(ShapeRendering::CrispEdges),
         _ => None,
     }
 }
@@ -230,6 +260,10 @@ impl IntermediateV1 {
                     Value::from(self.size.1 as f64),
                 ]),
             ),
+            kv(
+                "shape_rendering",
+                Value::from(shape_rendering_tag(self.shape_rendering)),
+            ),
         ]);
         let top = Value::map([
             (Value::from(0u64), Value::from(FORMAT_IDENTIFIER)),
@@ -292,6 +326,12 @@ impl IntermediateV1 {
             }
         };
 
+        let shape_rendering =
+            shape_rendering_from_tag(field(payload_map, "shape_rendering")?.to_u64().map_err(
+                |_| DecodeError::InvalidPayload("shape_rendering is not unsigned".into()),
+            )?)
+            .ok_or_else(|| DecodeError::InvalidPayload("unknown shape_rendering".into()))?;
+
         let size_value = field(payload_map, "size")?;
         let size_array = size_value
             .as_array()
@@ -316,13 +356,33 @@ impl IntermediateV1 {
         Ok(Self {
             root,
             size: (width as u32, height as u32),
+            shape_rendering,
         })
     }
 
     pub fn from_tree(tree: &Tree) -> Result<Self, DecodeError> {
-        let root = collect_group(tree.root(), 0)?;
+        // The producer parses with a sentinel `Options::shape_rendering`
+        // (`OptimizeSpeed`, a value the Straightlines spec forbids), so any
+        // path still carrying it means the attribute was absent (or set to
+        // something unparseable). Documents must declare exactly one of the
+        // two permitted values, consistently for every path.
+        let mut seen: Option<usvg::ShapeRendering> = None;
+        let root = collect_group(tree.root(), 0, &mut seen)?;
+        let shape_rendering = match seen {
+            Some(usvg::ShapeRendering::CrispEdges) => ShapeRendering::CrispEdges,
+            Some(usvg::ShapeRendering::GeometricPrecision) => ShapeRendering::GeometricPrecision,
+            Some(usvg::ShapeRendering::OptimizeSpeed) | None => {
+                return Err(DecodeError::InvalidPayload(
+                    "SVG must declare shape-rendering as geometricPrecision or crispEdges on the root element".into(),
+                ));
+            }
+        };
         let size = (tree.size().width() as u32, tree.size().height() as u32);
-        Ok(Self { root, size })
+        Ok(Self {
+            root,
+            size,
+            shape_rendering,
+        })
     }
 
     pub fn to_tree(&self) -> Result<Tree, DecodeError> {
@@ -333,6 +393,11 @@ impl IntermediateV1 {
         let mut svg = String::from("<svg xmlns=\"http://www.w3.org/2000/svg\"");
         svg.push_str(&format!(" width=\"{}\"", self.size.0));
         svg.push_str(&format!(" height=\"{}\"", self.size.1));
+        // GeometricPrecision is usvg's default and omitted, mirroring the
+        // upstream SVG writer's convention.
+        if self.shape_rendering == ShapeRendering::CrispEdges {
+            svg.push_str(" shape-rendering=\"crispEdges\"");
+        }
         svg.push_str(" role=\"presentation\">");
         write_group(&self.root, self.size, &mut svg);
         svg.push_str("</svg>");
@@ -722,7 +787,11 @@ fn shape_from_path(path: &UsvgPath) -> Option<Shape> {
     })
 }
 
-fn collect_group(group: &UsvgGroup, depth: usize) -> Result<Group, DecodeError> {
+fn collect_group(
+    group: &UsvgGroup,
+    depth: usize,
+    seen_rendering: &mut Option<usvg::ShapeRendering>,
+) -> Result<Group, DecodeError> {
     if depth > MAX_GROUP_DEPTH {
         return Err(DecodeError::InvalidPayload(
             "group nesting exceeds maximum depth".into(),
@@ -732,12 +801,35 @@ fn collect_group(group: &UsvgGroup, depth: usize) -> Result<Group, DecodeError> 
     for node in group.children() {
         match node {
             UsvgNode::Path(path) => {
+                // Every path participates in the shape-rendering consistency
+                // check, even one that is later dropped for an unsupported
+                // paint: the document must declare exactly one value.
+                let rendering = path.rendering_mode();
+                if rendering == usvg::ShapeRendering::OptimizeSpeed {
+                    return Err(DecodeError::InvalidPayload(
+                        "SVG must declare shape-rendering as geometricPrecision or crispEdges on the root element".into(),
+                    ));
+                }
+                match *seen_rendering {
+                    None => *seen_rendering = Some(rendering),
+                    Some(previous) if previous != rendering => {
+                        return Err(DecodeError::InvalidPayload(
+                            "inconsistent shape-rendering across elements is not supported".into(),
+                        ));
+                    }
+                    Some(_) => {}
+                }
+
                 if let Some(shape) = shape_from_path(path) {
                     children.push(Node::Shape(shape));
                 }
             }
             UsvgNode::Group(nested) => {
-                children.push(Node::Group(collect_group(nested, depth + 1)?));
+                children.push(Node::Group(collect_group(
+                    nested,
+                    depth + 1,
+                    seen_rendering,
+                )?));
             }
             _ => {}
         }
