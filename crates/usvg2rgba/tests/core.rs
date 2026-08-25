@@ -5,7 +5,9 @@
 // are assembled directly with `cbor_core`, the mandated codec.
 
 use cbor_core::{EncodeFormat, SequenceWriter, Value};
-use intermediate::{Group, IntermediateV1, LineCap, LineJoin, Node, Paint, Shape, Stroke};
+use intermediate::{
+    Group, IntermediateV1, LineCap, LineJoin, Node, Paint, Shape, ShapeRendering, Stroke,
+};
 use resvg::tiny_skia::{Pixmap, Transform};
 use usvg2rgba::core::{rasterize, RgbaOptions};
 
@@ -25,6 +27,7 @@ fn natural_cbor(size: (u32, u32)) -> Vec<u8> {
             children: vec![],
         },
         size,
+        shape_rendering: ShapeRendering::GeometricPrecision,
     };
     dto.encode()
 }
@@ -42,6 +45,7 @@ fn red_rect_cbor(size: (u32, u32), opacity: f32) -> Vec<u8> {
             })],
         },
         size,
+        shape_rendering: ShapeRendering::GeometricPrecision,
     };
     dto.encode()
 }
@@ -219,7 +223,7 @@ fn renderer_is_deterministic_across_calls() {
 
 #[test]
 fn end_to_end_svg_rasterizes_to_expected_color() {
-    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ff0000"/></svg>"##;
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10" shape-rendering="geometricPrecision"><rect width="10" height="10" fill="#ff0000"/></svg>"##;
     let bytes = svg2usvg::svg(svg).expect("svg2usvg should succeed");
 
     // The bytes must carry real geometry now: decode and confirm the shape is
@@ -360,6 +364,7 @@ fn dashed_stroke_differs_from_solid_stroke() {
                 })],
             },
             size: (10, 10),
+            shape_rendering: ShapeRendering::GeometricPrecision,
         };
         dto.encode()
     }
@@ -375,5 +380,56 @@ fn dashed_stroke_differs_from_solid_stroke() {
     assert_ne!(
         solid.pixels, dashed.pixels,
         "dash pattern must affect the rendered output"
+    );
+}
+
+/// `crispEdges` must disable anti-aliasing end-to-end: the DTO pipeline output
+/// for each permitted value matches a direct reference render of the same SVG,
+/// and the two renderings are visibly different from each other.
+#[test]
+fn shape_rendering_values_render_like_their_references() {
+    let mut pixels_by_value = Vec::new();
+    for (value, expected) in [
+        ("crispEdges", ShapeRendering::CrispEdges),
+        ("geometricPrecision", ShapeRendering::GeometricPrecision),
+    ] {
+        let svg_src = format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="{value}"><path d="M 2 3 L 29 22" stroke="#000000" stroke-width="1" fill="none"/></svg>"##
+        );
+
+        // Reference: parse the source directly and render it with resvg.
+        let reference_tree =
+            resvg::usvg::Tree::from_str(&svg_src, &resvg::usvg::Options::default())
+                .expect("reference svg should parse");
+        let mut reference = Pixmap::new(32, 32).expect("reference pixmap");
+        resvg::render(
+            &reference_tree,
+            Transform::identity(),
+            &mut reference.as_mut(),
+        );
+
+        // Pipeline: SVG → DTO → canonical CBOR → decode → reconstructed tree.
+        let bytes = svg2usvg::svg(&svg_src).expect("svg should convert");
+        let dto = intermediate::IntermediateV1::decode(&bytes).expect("decode should succeed");
+        assert_eq!(dto.shape_rendering, expected);
+
+        let result =
+            rasterize(&bytes, &options(0, 0, "premultiplied")).expect("payload should rasterize");
+        assert_eq!((result.width, result.height), (32, 32));
+
+        assert_eq!(
+            result.pixels,
+            reference.data().to_vec(),
+            "{}: DTO pipeline must match a direct render",
+            value
+        );
+        pixels_by_value.push((value, result.pixels));
+    }
+
+    // A 1px diagonal is AA-sensitive: crispEdges (no AA, hard pixels) and
+    // geometricPrecision (anti-aliased) must not produce identical canvases.
+    assert_ne!(
+        pixels_by_value[0].1, pixels_by_value[1].1,
+        "crispEdges and geometricPrecision must render differently"
     );
 }

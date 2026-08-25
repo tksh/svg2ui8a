@@ -14,14 +14,14 @@ pub use svg_core::svg;
 #[cfg(test)]
 mod tests {
     use super::svg;
-    use intermediate::{Group, IntermediateV1, Node, Paint};
+    use intermediate::{Group, IntermediateV1, Node, Paint, ShapeRendering};
 
     /// The Straightlines sample artwork (task.md §13).
     const FIXTURE_SVG: &str = include_str!("../../../tests/fixtures/straightlines-sample.svg");
 
     #[test]
     fn simple_svg_returns_non_empty() {
-        let result = svg("<svg><rect width=\"100\" height=\"100\" fill=\"red\"/></svg>");
+        let result = svg("<svg shape-rendering=\"geometricPrecision\"><rect width=\"100\" height=\"100\" fill=\"red\"/></svg>");
         assert!(result.is_ok());
         let bytes = result.unwrap();
         assert!(
@@ -32,7 +32,7 @@ mod tests {
 
     #[test]
     fn same_svg_identical_bytes() {
-        let svg_str = "<svg><rect width=\"100\" height=\"100\" fill=\"red\"/></svg>";
+        let svg_str = "<svg shape-rendering=\"geometricPrecision\"><rect width=\"100\" height=\"100\" fill=\"red\"/></svg>";
         let result1 = svg(&svg_str);
         let result2 = svg(&svg_str);
         assert!(result1.is_ok() && result2.is_ok());
@@ -92,11 +92,15 @@ mod tests {
 
     #[test]
     fn round_trip_through_intermediate_is_content_verifying() {
-        let svg_str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10"><rect x="2" y="2" width="6" height="6" fill="#ff0000" opacity="0.5"/></svg>"##;
+        let svg_str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10" shape-rendering="geometricPrecision"><rect x="2" y="2" width="6" height="6" fill="#ff0000" opacity="0.5"/></svg>"##;
         let bytes = svg(svg_str).expect("svg should convert");
         let intermediate = IntermediateV1::decode(&bytes).expect("decode should succeed");
 
         assert_eq!(intermediate.size, (10, 10));
+        assert_eq!(
+            intermediate.shape_rendering,
+            ShapeRendering::GeometricPrecision
+        );
         // usvg models element-level `opacity` as a compositing wrapper group;
         // the DTO preserves that group instead of flattening the opacity.
         let groups = groups_of(&intermediate.root);
@@ -133,6 +137,11 @@ mod tests {
         let dto = IntermediateV1::decode(&bytes).expect("fixture output should decode");
 
         assert_eq!(dto.size, (31, 31), "viewBox 0 0 31 31");
+        assert_eq!(
+            dto.shape_rendering,
+            ShapeRendering::GeometricPrecision,
+            "fixture declares geometricPrecision at the root"
+        );
         let layers = groups_of(&dto.root);
         assert_eq!(layers.len(), 4, "expected four <g> layers");
 
@@ -173,6 +182,74 @@ mod tests {
         let bytes1 = svg(FIXTURE_SVG).expect("fixture svg should convert");
         let bytes2 = svg(FIXTURE_SVG).expect("fixture svg should convert");
         assert_eq!(bytes1, bytes2, "fixture conversion must be deterministic");
+    }
+
+    // --- shape-rendering enforcement (intermediate-v1-shape-rendering.md) ---
+
+    fn svg_with_rendering(value: &str) -> String {
+        format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10" shape-rendering="{value}"><path d="M 2 2 L 8 8" stroke="#000" stroke-width="1" fill="none"/></svg>"##
+        )
+    }
+
+    #[test]
+    fn missing_shape_rendering_rejected() {
+        let result = svg(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>"#,
+        );
+        assert!(
+            result.is_err(),
+            "SVG without shape-rendering must be rejected"
+        );
+    }
+
+    #[test]
+    fn auto_is_accepted_as_geometric_precision() {
+        let bytes = svg(&svg_with_rendering("auto")).expect("auto must be accepted");
+        let dto = IntermediateV1::decode(&bytes).expect("decode should succeed");
+        assert_eq!(dto.shape_rendering, ShapeRendering::GeometricPrecision);
+    }
+
+    #[test]
+    fn optimize_speed_rejected() {
+        assert!(svg(&svg_with_rendering("optimizeSpeed")).is_err());
+    }
+
+    #[test]
+    fn invalid_shape_rendering_value_rejected() {
+        assert!(svg(&svg_with_rendering("bogus")).is_err());
+    }
+
+    #[test]
+    fn both_permitted_values_accepted_with_correct_field() {
+        for (value, expected) in [
+            ("geometricPrecision", ShapeRendering::GeometricPrecision),
+            ("crispEdges", ShapeRendering::CrispEdges),
+        ] {
+            let bytes = svg(&svg_with_rendering(value)).expect("permitted value");
+            let dto = IntermediateV1::decode(&bytes).expect("decode should succeed");
+            assert_eq!(dto.shape_rendering, expected, "value: {}", value);
+        }
+    }
+
+    #[test]
+    fn inconsistent_per_element_override_rejected() {
+        let svg_str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10" shape-rendering="crispEdges"><path d="M 2 2 L 8 8" stroke="#000" stroke-width="1" fill="none"/><g shape-rendering="geometricPrecision"><path d="M 2 8 L 8 2" stroke="#000" stroke-width="1" fill="none"/></g></svg>"##;
+        assert!(
+            svg(svg_str).is_err(),
+            "mixed per-element overrides must be rejected"
+        );
+    }
+
+    #[test]
+    fn document_without_paths_rejected() {
+        let result = svg(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="geometricPrecision"/> "#,
+        );
+        assert!(
+            result.is_err(),
+            "a document with no paths has no declared rendering to verify"
+        );
     }
 
     #[test]
