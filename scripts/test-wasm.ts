@@ -31,13 +31,21 @@ const FIXTURE_SVG = await Deno.readTextFile(
 const SVGS: Array<[string, string]> = [
   [
     "full-canvas rect",
-    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#ff0000"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="geometricPrecision"><rect width="10" height="10" fill="#ff0000"/></svg>',
   ],
   [
     "partial-width bar",
-    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="4" height="10" fill="#ff0000"/></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="geometricPrecision"><rect width="4" height="10" fill="#ff0000"/></svg>',
   ],
   ["straightlines fixture (layers + strokes)", FIXTURE_SVG],
+  [
+    "diagonal crispEdges",
+    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="crispEdges"><path d="M 2 3 L 29 22" stroke="#000000" stroke-width="1" fill="none"/></svg>',
+  ],
+  [
+    "diagonal geometricPrecision",
+    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="geometricPrecision"><path d="M 2 3 L 29 22" stroke="#000000" stroke-width="1" fill="none"/></svg>',
+  ],
 ];
 
 const RGBA_OPTION_SETS: Array<[string, Usvg2RgbaOptions]> = [

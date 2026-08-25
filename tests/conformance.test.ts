@@ -15,7 +15,8 @@ const FIXTURE_CBOR_PATH = join(
   "tests/fixtures/straightlines-sample.cbor",
 );
 
-const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
+const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"
+  shape-rendering="geometricPrecision">
   <rect width="10" height="10" fill="#ff0000"/>
 </svg>`;
 
@@ -198,6 +199,25 @@ Deno.test("malformed usvg payloads reject the usvg2rgba promise", async () => {
   await assertRejects(
     usvg2rgba(truncated),
     "a truncated payload must reject the usvg2rgba promise",
+  );
+});
+
+Deno.test("SVG without shape-rendering rejects svg2usvg", async () => {
+  await assertRejects(
+    svg2usvg(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#ff0000"/></svg>`,
+    ),
+    "an SVG missing the root shape-rendering declaration must be rejected",
+  );
+});
+
+Deno.test("shape-rendering=auto is accepted as geometricPrecision", async () => {
+  const bytes = await svg2usvg(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="auto"><rect width="10" height="10" fill="#ff0000"/></svg>`,
+  );
+  assert(
+    bytes instanceof Uint8Array && bytes.length > 0,
+    "auto must be accepted",
   );
 });
 

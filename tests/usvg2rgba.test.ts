@@ -9,7 +9,8 @@
 import { usvg2rgba } from "../src/rgba.ts";
 import { svg2usvg } from "../src/usvg.ts";
 
-const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
+const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"
+  shape-rendering="geometricPrecision">
   <rect width="10" height="10" fill="#ff0000"/>
 </svg>`;
 
@@ -90,8 +91,8 @@ Deno.test("usvg2rgba result is a plain object, not a wasm-bindgen class instance
 });
 
 Deno.test("usvg2rgba result stays valid after a second call reuses the wasm instance", async () => {
-  const barSvg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
+  const barSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"
+      shape-rendering="geometricPrecision">
   <rect width="4" height="10" fill="#ff0000"/>
 </svg>`;
   const bytes = await svg2usvg(barSvg);
