@@ -6,7 +6,7 @@ use std::fmt;
 use usvg::tiny_skia_path::PathSegment;
 use usvg::{Group as UsvgGroup, Node as UsvgNode, Path as UsvgPath, Tree};
 
-const FORMAT_IDENTIFIER: &str = "svg2ui8a/usvg";
+const FORMAT_IDENTIFIER: &str = "svg2ui8a/straightlines";
 const FORMAT_VERSION: u8 = 1;
 
 // Maximum supported group nesting depth. Decode rejects deeper payloads so
@@ -760,31 +760,69 @@ fn fill_from_usvg(fill: &usvg::Fill) -> Option<Paint> {
     }
 }
 
-fn shape_from_path(path: &UsvgPath) -> Option<Shape> {
+fn shape_from_path(path: &UsvgPath) -> Result<Option<Shape>, DecodeError> {
+    validate_straight_line_geometry(path)?;
     let fill = path.fill();
     let stroke = path.stroke();
 
     let dto_fill = match fill {
         Some(fill) => match fill_from_usvg(fill) {
             Some(paint) => Some(paint),
-            None => return None,
+            // Straightlines subset: gradient/pattern paints are rejected, not
+            // silently skipped (reject-don't-guess).
+            None => {
+                return Err(DecodeError::InvalidPayload(
+                    "Straightlines subset violation: gradient and pattern paints are not supported"
+                        .into(),
+                ));
+            }
         },
         None => None,
     };
     let dto_stroke = match stroke {
         Some(stroke) => match stroke_from_usvg(stroke) {
             Some(stroke) => Some(stroke),
-            None => return None,
+            None => {
+                return Err(DecodeError::InvalidPayload(
+                    "Straightlines subset violation: gradient and pattern paints are not supported"
+                        .into(),
+                ));
+            }
         },
         None => None,
     };
 
-    Some(Shape {
+    Ok(Some(Shape {
         path_data: path_data_to_svg(path),
         fill: dto_fill,
         fill_opacity: fill.map_or(1.0, |f| f.opacity().get()),
         stroke: dto_stroke,
-    })
+    }))
+}
+
+/// Straightlines subset geometry: every path is exactly one two-point straight
+/// segment (`M x0 y0 L x1 y1`). Curves, arcs, multi-segment polylines, and
+/// closed shapes are rejected rather than silently mis-encoded.
+fn validate_straight_line_geometry(path: &UsvgPath) -> Result<(), DecodeError> {
+    let mut count = 0usize;
+    let mut ok = true;
+    for (index, segment) in path.data().segments().enumerate() {
+        count += 1;
+        let valid = matches!(
+            (index, segment),
+            (0, PathSegment::MoveTo(_)) | (1, PathSegment::LineTo(_))
+        );
+        if !valid {
+            ok = false;
+            break;
+        }
+    }
+    if !ok || count != 2 {
+        return Err(DecodeError::InvalidPayload(
+            "Straightlines subset violation: paths must be a single two-point line segment".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn collect_group(
@@ -797,6 +835,22 @@ fn collect_group(
             "group nesting exceeds maximum depth".into(),
         ));
     }
+
+    // Straightlines subset: no clip-path, mask, or filter anywhere.
+    if group.clip_path().is_some() || group.mask().is_some() || !group.filters().is_empty() {
+        return Err(DecodeError::InvalidPayload(
+            "Straightlines subset violation: clip-path, mask, and filter are not supported".into(),
+        ));
+    }
+    // Straightlines subset: groups are flat — layers live directly under the
+    // root and contain only shapes. usvg also models element-level `opacity`
+    // on a shape as a wrapper group, which this rejects as nesting.
+    if depth >= 2 {
+        return Err(DecodeError::InvalidPayload(
+            "Straightlines subset violation: nested groups are not supported".into(),
+        ));
+    }
+
     let mut children = Vec::new();
     for node in group.children() {
         match node {
@@ -820,8 +874,9 @@ fn collect_group(
                     Some(_) => {}
                 }
 
-                if let Some(shape) = shape_from_path(path) {
-                    children.push(Node::Shape(shape));
+                match shape_from_path(path)? {
+                    Some(shape) => children.push(Node::Shape(shape)),
+                    None => {}
                 }
             }
             UsvgNode::Group(nested) => {

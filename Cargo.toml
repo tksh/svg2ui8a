@@ -1,8 +1,9 @@
 [workspace]
 members = [
   "crates/intermediate",
-  "crates/svg2usvg",
-  "crates/usvg2rgba",
+  "crates/svg2rgba",
+  "crates/svg2stln",
+  "crates/stln2rgba",
 ]
 resolver = "2"
 

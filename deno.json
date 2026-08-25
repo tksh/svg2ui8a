@@ -1,10 +1,11 @@
 {
   "name": "@tksh/svg2ui8a",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "exports": {
     ".": "./src/mod.ts",
-    "./usvg": "./src/usvg.ts",
-    "./rgba": "./src/rgba.ts"
+    "./svg2rgba": "./src/svg2rgba.ts",
+    "./svg2stln": "./src/stln.ts",
+    "./stln2rgba": "./src/stln-rgba.ts"
   },
   "publish": {
     "exclude": [
@@ -30,11 +31,11 @@
   "tasks": {
     "build": "deno run -A scripts/build.ts",
     "test": "deno task test:rust && deno task test:wasm && deno task test:wasm:browser && deno test -A",
-    "test:rust": "cd crates/intermediate && cargo test && cd ../svg2usvg && cargo test && cd ../usvg2rgba && cargo test",
+    "test:rust": "cd crates/intermediate && cargo test && cd ../svg2rgba && cargo test && cd ../svg2stln && cargo test && cd ../stln2rgba && cargo test",
     "test:wasm": "deno run -A scripts/test-wasm.ts",
     "test:wasm:browser": "deno run -A scripts/test-wasm-browser.ts",
     "ensure:chrome": "deno run -A scripts/ensure-chrome.ts",
-    "fixtures:regen": "sh -c 'cargo run --quiet --release -p svg2usvg --example dump_core < tests/fixtures/straightlines-sample.svg > tests/fixtures/straightlines-sample.cbor'",
+    "fixtures:regen": "sh -c 'cargo run --quiet --release -p svg2stln --example dump_core < tests/fixtures/straightlines-sample.svg > tests/fixtures/straightlines-sample.cbor'",
     "fmt": "cargo fmt && deno fmt",
     "lint": "deno lint",
     "check": "deno check src/**/*.ts tests/**/*.ts scripts/*.ts"

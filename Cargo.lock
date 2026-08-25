@@ -286,6 +286,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
+name = "stln2rgba"
+version = "0.1.0"
+dependencies = [
+ "cbor-core",
+ "intermediate",
+ "resvg",
+ "svg2stln",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "strict-num"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -295,7 +306,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "svg2usvg"
+name = "svg2rgba"
+version = "0.1.0"
+dependencies = [
+ "resvg",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "svg2stln"
 version = "0.1.0"
 dependencies = [
  "intermediate",
@@ -376,17 +395,6 @@ dependencies = [
  "svgtypes",
  "tiny-skia-path",
  "xmlwriter",
-]
-
-[[package]]
-name = "usvg2rgba"
-version = "0.1.0"
-dependencies = [
- "cbor-core",
- "intermediate",
- "resvg",
- "svg2usvg",
- "wasm-bindgen",
 ]
 
 [[package]]

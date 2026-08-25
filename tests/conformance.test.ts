@@ -1,12 +1,12 @@
 // Deno tests for the §3.4 required behaviors not exercised by
-// tests/usvg2rgba.test.ts: producer output shape, JS-side determinism,
+// tests/stln2rgba.test.ts: producer output shape, JS-side determinism,
 // rejection of malformed inputs, the end-to-end flow, the `.cbor` file
 // round trip, and init idempotency across the two Wasm modules.
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { usvg2rgba, type Usvg2RgbaOptions } from "../src/rgba.ts";
-import { svg2usvg } from "../src/usvg.ts";
+import { stln2rgba, type Stln2RgbaOptions } from "../src/stln-rgba.ts";
+import { svg2stln } from "../src/stln.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE_SVG_PATH = join(ROOT, "tests/fixtures/straightlines-sample.svg");
@@ -17,7 +17,7 @@ const FIXTURE_CBOR_PATH = join(
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"
   shape-rendering="geometricPrecision">
-  <rect width="10" height="10" fill="#ff0000"/>
+  <path d="M 5 0 L 5 10" stroke="#ff0000" stroke-width="10" fill="none"/>
 </svg>`;
 
 function assert(cond: unknown, msg: string): asserts cond {
@@ -45,33 +45,33 @@ function assertBytesEqual(a: Uint8Array, b: Uint8Array, msg: string): void {
   }
 }
 
-Deno.test("svg2usvg resolves to a non-empty Uint8Array", async () => {
-  const bytes = await svg2usvg(SVG);
-  assert(bytes instanceof Uint8Array, "svg2usvg must return a Uint8Array");
-  assert(bytes.length > 0, "svg2usvg must return non-empty bytes");
+Deno.test("svg2stln resolves to a non-empty Uint8Array", async () => {
+  const bytes = await svg2stln(SVG);
+  assert(bytes instanceof Uint8Array, "svg2stln must return a Uint8Array");
+  assert(bytes.length > 0, "svg2stln must return non-empty bytes");
 });
 
 Deno.test("same SVG string produces identical usvg bytes (determinism)", async () => {
-  const first = await svg2usvg(SVG);
-  const second = await svg2usvg(SVG);
+  const first = await svg2stln(SVG);
+  const second = await svg2stln(SVG);
   assertBytesEqual(
     first,
     second,
-    "repeated svg2usvg calls must produce identical bytes",
+    "repeated svg2stln calls must produce identical bytes",
   );
 });
 
-Deno.test("malformed SVG rejects the svg2usvg promise", async () => {
+Deno.test("malformed SVG rejects the svg2stln promise", async () => {
   await assertRejects(
-    svg2usvg("<svg>unclosed"),
-    "malformed SVG must reject the svg2usvg promise",
+    svg2stln("<svg>unclosed"),
+    "malformed SVG must reject the svg2stln promise",
   );
 });
 
 Deno.test("end-to-end flow produces correctly sized RGBA for every sizing rule", async () => {
-  const bytes = await svg2usvg(SVG);
+  const bytes = await svg2stln(SVG);
 
-  const cases: Array<[Usvg2RgbaOptions | undefined, number, number]> = [
+  const cases: Array<[Stln2RgbaOptions | undefined, number, number]> = [
     [undefined, 10, 10],
     [{}, 10, 10],
     [{ width: 40 }, 40, 10],
@@ -79,7 +79,7 @@ Deno.test("end-to-end flow produces correctly sized RGBA for every sizing rule",
     [{ width: 40, height: 30 }, 40, 30],
   ];
   for (const [options, w, h] of cases) {
-    const result = await usvg2rgba(bytes, options);
+    const result = await stln2rgba(bytes, options);
     assert(
       result.width === w && result.height === h,
       `sizing rule broken for options ${
@@ -96,7 +96,7 @@ Deno.test("end-to-end flow produces correctly sized RGBA for every sizing rule",
     );
   }
 
-  const premultiplied = await usvg2rgba(bytes, {
+  const premultiplied = await stln2rgba(bytes, {
     width: 40,
     height: 30,
     alphaMode: "premultiplied",
@@ -112,7 +112,7 @@ Deno.test("end-to-end flow produces correctly sized RGBA for every sizing rule",
 });
 
 Deno.test(".cbor file round trip: written bytes rasterize identically", async () => {
-  const bytes = await svg2usvg(SVG);
+  const bytes = await svg2stln(SVG);
   const path = await Deno.makeTempFile({
     prefix: "svg2ui8a_",
     suffix: ".cbor",
@@ -128,11 +128,11 @@ Deno.test(".cbor file round trip: written bytes rasterize identically", async ()
     assertBytesEqual(
       reread,
       bytes,
-      "file contents must match the svg2usvg output",
+      "file contents must match the svg2stln output",
     );
 
-    const viaFile = await usvg2rgba(reread, { width: 40, height: 30 });
-    const inMemory = await usvg2rgba(bytes, { width: 40, height: 30 });
+    const viaFile = await stln2rgba(reread, { width: 40, height: 30 });
+    const inMemory = await stln2rgba(bytes, { width: 40, height: 30 });
     assert(
       viaFile.width === inMemory.width && viaFile.height === inMemory.height &&
         viaFile.alphaMode === inMemory.alphaMode,
@@ -149,71 +149,71 @@ Deno.test(".cbor file round trip: written bytes rasterize identically", async ()
 });
 
 Deno.test("init is idempotent and the two Wasm modules do not cross-interfere", async () => {
-  const first = await svg2usvg(SVG);
-  const second = await svg2usvg(SVG);
+  const first = await svg2stln(SVG);
+  const second = await svg2stln(SVG);
   assertBytesEqual(
     first,
     second,
-    "a repeated svg2usvg call must not re-initialize or corrupt output",
+    "a repeated svg2stln call must not re-initialize or corrupt output",
   );
 
-  const renderA = await usvg2rgba(first);
-  const renderB = await usvg2rgba(first);
+  const renderA = await stln2rgba(first);
+  const renderB = await stln2rgba(first);
   assert(
     renderB.width === 10 && renderB.height === 10,
-    "a repeated usvg2rgba call must not re-initialize or change dimensions",
+    "a repeated stln2rgba call must not re-initialize or change dimensions",
   );
   assertBytesEqual(
     renderA.pixels,
     renderB.pixels,
-    "repeated usvg2rgba calls must produce identical pixels",
+    "repeated stln2rgba calls must produce identical pixels",
   );
 
-  const third = await svg2usvg(SVG);
+  const third = await svg2stln(SVG);
   assertBytesEqual(
     first,
     third,
-    "svg2usvg must stay correct after usvg2rgba calls (no cross-init interference)",
+    "svg2stln must stay correct after stln2rgba calls (no cross-init interference)",
   );
 
-  const renderC = await usvg2rgba(first, { width: 20, height: 10 });
+  const renderC = await stln2rgba(first, { width: 20, height: 10 });
   assert(
     renderC.width === 20 && renderC.height === 10,
-    "usvg2rgba must stay correct after further svg2usvg calls (no cross-init interference)",
+    "stln2rgba must stay correct after further svg2stln calls (no cross-init interference)",
   );
 });
 
-Deno.test("malformed usvg payloads reject the usvg2rgba promise", async () => {
+Deno.test("malformed usvg payloads reject the stln2rgba promise", async () => {
   const notCbor = new TextEncoder().encode("this is not a usvg payload");
   await assertRejects(
-    usvg2rgba(notCbor),
-    "a garbage payload must reject the usvg2rgba promise",
+    stln2rgba(notCbor),
+    "a garbage payload must reject the stln2rgba promise",
   );
   await assertRejects(
-    usvg2rgba(new Uint8Array()),
-    "an empty payload must reject the usvg2rgba promise",
+    stln2rgba(new Uint8Array()),
+    "an empty payload must reject the stln2rgba promise",
   );
 
-  const bytes = await svg2usvg(SVG);
+  const bytes = await svg2stln(SVG);
   const truncated = bytes.slice(0, Math.floor(bytes.length / 2));
   await assertRejects(
-    usvg2rgba(truncated),
-    "a truncated payload must reject the usvg2rgba promise",
+    stln2rgba(truncated),
+    "a truncated payload must reject the stln2rgba promise",
   );
 });
 
-Deno.test("SVG without shape-rendering rejects svg2usvg", async () => {
+Deno.test("SVG without shape-rendering rejects svg2stln", async () => {
   await assertRejects(
-    svg2usvg(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#ff0000"/></svg>`,
+    svg2stln(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path d="M 1 5 L 9 5" stroke="#000" stroke-width="2" fill="none"/></svg>`,
     ),
     "an SVG missing the root shape-rendering declaration must be rejected",
   );
 });
 
 Deno.test("shape-rendering=auto is accepted as geometricPrecision", async () => {
-  const bytes = await svg2usvg(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="auto"><rect width="10" height="10" fill="#ff0000"/></svg>`,
+  const bytes = await svg2stln(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="auto"><path d="M 1 5 L 9 5" stroke="#000" stroke-width="2" fill="none"/></svg>`,
   );
   assert(
     bytes instanceof Uint8Array && bytes.length > 0,
@@ -229,17 +229,17 @@ Deno.test("shape-rendering=auto is accepted as geometricPrecision", async () => 
 const FIXTURE_SVG = await Deno.readTextFile(FIXTURE_SVG_PATH);
 const FIXTURE_CBOR = await Deno.readFile(FIXTURE_CBOR_PATH);
 
-Deno.test("fixture: svg2usvg output is byte-identical to the committed .cbor", async () => {
-  const fresh = await svg2usvg(FIXTURE_SVG);
+Deno.test("fixture: svg2stln output is byte-identical to the committed .cbor", async () => {
+  const fresh = await svg2stln(FIXTURE_SVG);
   assertBytesEqual(
     fresh,
     FIXTURE_CBOR,
-    "svg2usvg(straightlines-sample.svg) must reproduce straightlines-sample.cbor byte-for-byte; run `deno task fixtures:regen` if the format intentionally changed",
+    "svg2stln(straightlines-sample.svg) must reproduce straightlines-sample.cbor byte-for-byte; run `deno task fixtures:regen` if the format intentionally changed",
   );
 });
 
 Deno.test("fixture: committed .cbor rasterizes at its natural size as a standalone file", async () => {
-  const result = await usvg2rgba(FIXTURE_CBOR);
+  const result = await stln2rgba(FIXTURE_CBOR);
   assert(
     result.width === 31 && result.height === 31,
     `expected natural size 31x31, got ${result.width}x${result.height}`,
@@ -255,9 +255,9 @@ Deno.test("fixture: committed .cbor rasterizes at its natural size as a standalo
   );
 });
 
-Deno.test("fixture: .cbor from disk and fresh svg2usvg output rasterize identically", async () => {
-  const fromDisk = await usvg2rgba(FIXTURE_CBOR);
-  const inMemory = await usvg2rgba(await svg2usvg(FIXTURE_SVG));
+Deno.test("fixture: .cbor from disk and fresh svg2stln output rasterize identically", async () => {
+  const fromDisk = await stln2rgba(FIXTURE_CBOR);
+  const inMemory = await stln2rgba(await svg2stln(FIXTURE_SVG));
   assert(
     fromDisk.width === inMemory.width && fromDisk.height === inMemory.height &&
       fromDisk.alphaMode === inMemory.alphaMode,

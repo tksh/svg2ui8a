@@ -22,7 +22,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 /**
  * The Straightlines fixture (task.md §13). Exercised through every layer so
  * groups (`<g>` with compositing opacity) and full stroke styling are
- * verified against the native core, not just flat filled rects.
+ * verified against the native core, not just flat filled shapes.
  */
 const FIXTURE_SVG = await Deno.readTextFile(
   join(ROOT, "tests", "fixtures", "straightlines-sample.svg"),
@@ -30,12 +30,12 @@ const FIXTURE_SVG = await Deno.readTextFile(
 
 const SVGS: Array<[string, string]> = [
   [
-    "full-canvas rect",
-    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="geometricPrecision"><rect width="10" height="10" fill="#ff0000"/></svg>',
+    "full-canvas stroke",
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="geometricPrecision"><path d="M 5 0 L 5 10" stroke="#ff0000" stroke-width="10" fill="none"/></svg>',
   ],
   [
-    "partial-width bar",
-    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="geometricPrecision"><rect width="4" height="10" fill="#ff0000"/></svg>',
+    "partial-width stroke",
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" shape-rendering="geometricPrecision"><path d="M 2 0 L 2 10" stroke="#ff0000" stroke-width="4" fill="none"/></svg>',
   ],
   ["straightlines fixture (layers + strokes)", FIXTURE_SVG],
   [
@@ -132,21 +132,25 @@ async function runNativeCore(
 
 async function main(): Promise<void> {
   console.log(`Astral: jsr:@astral/astral@0.5.6 Chrome ${EXPECTED_CHROME}`);
-  const [usvgJs, rgbaJs] = await Promise.all([
-    bundleTsToJs("src/usvg.ts"),
-    bundleTsToJs("src/rgba.ts"),
+  const [stlnJs, stlnRgbaJs, svgRgbaJs] = await Promise.all([
+    bundleTsToJs("src/stln.ts"),
+    bundleTsToJs("src/stln-rgba.ts"),
+    bundleTsToJs("src/svg2rgba.ts"),
   ]);
-  console.log(`bundle: src/usvg.ts → ${usvgJs.length} bytes JS`);
-  console.log(`bundle: src/rgba.ts → ${rgbaJs.length} bytes JS`);
+  console.log(`bundle: src/stln.ts → ${stlnJs.length} bytes JS`);
+  console.log(`bundle: src/stln-rgba.ts → ${stlnRgbaJs.length} bytes JS`);
+  console.log(`bundle: src/svg2rgba.ts → ${svgRgbaJs.length} bytes JS`);
 
   const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>wasm-browser §8.5</title></head>
 <body>
 <script type="module">
-import { svg2usvg } from "/usvg.js";
-import { usvg2rgba } from "/rgba.js";
-window.__svg2usvg = svg2usvg;
-window.__usvg2rgba = usvg2rgba;
+import { svg2stln } from "/stln.js";
+import { stln2rgba } from "/stln-rgba.js";
+import { svg2rgba } from "/svg2rgba.js";
+window.__svg2stln = svg2stln;
+window.__stln2rgba = stln2rgba;
+window.__svg2rgba = svg2rgba;
 window.__ready = true;
 </script>
 </body></html>`;
@@ -159,15 +163,13 @@ window.__ready = true;
       { hostname: "127.0.0.1", port: 0, onListen: ({ port: p }) => port = p },
       (req) => {
         const url = new URL(req.url);
-        if (url.pathname === "/usvg.js") {
-          return new Response(usvgJs, {
-            headers: {
-              "content-type": "application/javascript; charset=utf-8",
-            },
-          });
-        }
-        if (url.pathname === "/rgba.js") {
-          return new Response(rgbaJs, {
+        const jsFiles: Record<string, string> = {
+          "/stln.js": stlnJs,
+          "/stln-rgba.js": stlnRgbaJs,
+          "/svg2rgba.js": svgRgbaJs,
+        };
+        if (jsFiles[url.pathname]) {
+          return new Response(jsFiles[url.pathname], {
             headers: {
               "content-type": "application/javascript; charset=utf-8",
             },
@@ -199,12 +201,12 @@ window.__ready = true;
       // Helpers that call the shipped entry points inside the browser and
       // marshal results back to Deno for comparison with native core.
       // deno-lint-ignore no-inner-declarations
-      async function browserSvg2usvg(svg: string): Promise<Uint8Array> {
+      async function browserSvg2stln(svg: string): Promise<Uint8Array> {
         const res = await page.evaluate(async (svgStr) => {
           const g = globalThis as unknown as {
-            __svg2usvg: (s: string) => Promise<Uint8Array>;
+            __svg2stln: (s: string) => Promise<Uint8Array>;
           };
-          const pending = g.__svg2usvg(svgStr);
+          const pending = g.__svg2stln(svgStr);
           const isPromise = pending instanceof Promise;
           const bytes = await pending;
           const isU8 = bytes instanceof Uint8Array;
@@ -218,24 +220,24 @@ window.__ready = true;
 
         assert(
           (res as { isPromise: boolean }).isPromise,
-          "svg2usvg must return a Promise in browser",
+          "svg2stln must return a Promise in browser",
         );
         assert(
           (res as { isU8: boolean }).isU8,
-          `svg2usvg must resolve to Uint8Array in browser (got ${
+          `svg2stln must resolve to Uint8Array in browser (got ${
             (res as { ctor: string }).ctor
           })`,
         );
         const arr = (res as { arr: number[] }).arr;
         assert(
           arr.length > 0,
-          "svg2usvg must resolve to non-empty Uint8Array in browser",
+          "svg2stln must resolve to non-empty Uint8Array in browser",
         );
         return new Uint8Array(arr);
       }
 
       // deno-lint-ignore no-inner-declarations
-      async function browserUsvg2rgba(
+      async function browserStln2rgba(
         usvgBytes: Uint8Array,
         opts: RgbaOpts,
       ): Promise<
@@ -244,7 +246,7 @@ window.__ready = true;
         const bytesArr = Array.from(usvgBytes);
         const res = await page.evaluate(async (arr, o) => {
           const g = globalThis as unknown as {
-            __usvg2rgba: (
+            __stln2rgba: (
               b: Uint8Array,
               opts?: { width?: number; height?: number; alphaMode?: string },
             ) => Promise<{
@@ -255,7 +257,7 @@ window.__ready = true;
             }>;
           };
           const bytes = new Uint8Array(arr as number[]);
-          const pending = g.__usvg2rgba(bytes, o as RgbaOpts);
+          const pending = g.__stln2rgba(bytes, o as RgbaOpts);
           const isPromise = pending instanceof Promise;
           const rgba = await pending;
           return {
@@ -271,20 +273,20 @@ window.__ready = true;
 
         assert(
           (res as { isPromise: boolean }).isPromise,
-          "usvg2rgba must return a Promise<RgbaResult> in browser",
+          "stln2rgba must return a Promise<RgbaResult> in browser",
         );
         assert(
           typeof (res as { width: unknown }).width === "number" &&
             typeof (res as { height: unknown }).height === "number",
-          "usvg2rgba must resolve to RgbaResult with numeric dimensions in browser",
+          "stln2rgba must resolve to RgbaResult with numeric dimensions in browser",
         );
         assert(
           typeof (res as { alphaMode: unknown }).alphaMode === "string",
-          "usvg2rgba must resolve to RgbaResult with alphaMode string in browser",
+          "stln2rgba must resolve to RgbaResult with alphaMode string in browser",
         );
         assert(
           (res as { pixelsIsU8: boolean }).pixelsIsU8,
-          `usvg2rgba pixels must be Uint8Array in browser (got ${
+          `stln2rgba pixels must be Uint8Array in browser (got ${
             (res as { pixelsCtor: string }).pixelsCtor
           })`,
         );
@@ -293,7 +295,7 @@ window.__ready = true;
         const height = (res as { height: number }).height;
         assert(
           pixelsArr.length === width * height * 4,
-          `usvg2rgba pixels.length ${pixelsArr.length} !== width*height*4 ${
+          `stln2rgba pixels.length ${pixelsArr.length} !== width*height*4 ${
             width * height * 4
           } in browser`,
         );
@@ -308,25 +310,25 @@ window.__ready = true;
       // §3.3 case 1+2: Promise types already asserted above; now byte-identity vs native core.
       const encoder = new TextEncoder();
       for (const [name, svgStr] of SVGS) {
-        const browserBytes = await browserSvg2usvg(svgStr);
+        const browserBytes = await browserSvg2stln(svgStr);
         const native = await runNativeCore(
-          "svg2usvg",
+          "svg2stln",
           [],
           encoder.encode(svgStr),
         );
         assertBytesEqual(
           browserBytes,
           native.stdout,
-          `svg2usvg [${name}] browser vs native`,
+          `svg2stln [${name}] browser vs native`,
         );
         console.log(
-          `  ✓ svg2usvg [${name}] browser vs native (${browserBytes.length} bytes)`,
+          `  ✓ svg2stln [${name}] browser vs native (${browserBytes.length} bytes)`,
         );
 
         for (const [optLabel, opts] of RGBA_OPTION_SETS) {
-          const browserRgba = await browserUsvg2rgba(browserBytes, opts);
+          const browserRgba = await browserStln2rgba(browserBytes, opts);
           const nativeRgba = await runNativeCore(
-            "usvg2rgba",
+            "stln2rgba",
             [
               String(opts.width ?? 0),
               String(opts.height ?? 0),
@@ -351,7 +353,70 @@ window.__ready = true;
             nativeRgba.stdout,
             `[${name}] ${optLabel}: browser pixels vs native`,
           );
-          console.log(`  ✓ usvg2rgba [${name}] ${optLabel} browser vs native`);
+          console.log(`  ✓ stln2rgba [${name}] ${optLabel} browser vs native`);
+        }
+
+        // One-shot path: SVG string in, pixels out.
+        for (const [optLabel, opts] of RGBA_OPTION_SETS.slice(0, 3)) {
+          const res = await page.evaluate(async (svgStr, o) => {
+            const g = globalThis as unknown as {
+              __svg2rgba: (
+                s: string,
+                opts?: { width?: number; height?: number; alphaMode?: string },
+              ) => Promise<{
+                width: number;
+                height: number;
+                alphaMode: string;
+                pixels: Uint8Array;
+              }>;
+            };
+            const pending = g.__svg2rgba(svgStr, o as RgbaOpts);
+            const isPromise = pending instanceof Promise;
+            const rgba = await pending;
+            return {
+              isPromise,
+              width: rgba.width,
+              height: rgba.height,
+              alphaMode: rgba.alphaMode,
+              pixelsIsU8: rgba.pixels instanceof Uint8Array,
+              pixelsCtor: rgba.pixels.constructor.name,
+              pixelsArr: Array.from(rgba.pixels),
+            };
+          }, { args: [svgStr, opts as unknown as RgbaOpts] });
+
+          assert(
+            (res as { isPromise: boolean }).isPromise &&
+              (res as { pixelsIsU8: boolean }).pixelsIsU8,
+            `svg2rgba [${name}] ${optLabel}: bad shape in browser (got ${
+              (res as { pixelsCtor: string }).pixelsCtor
+            })`,
+          );
+          const browserOne = {
+            width: (res as { width: number }).width,
+            height: (res as { height: number }).height,
+            alphaMode: (res as { alphaMode: string }).alphaMode,
+            pixels: new Uint8Array((res as { pixelsArr: number[] }).pixelsArr),
+          };
+          const nativeOne = await runNativeCore("svg2rgba", [
+            String(opts.width ?? 0),
+            String(opts.height ?? 0),
+            opts.alphaMode ?? "straight",
+          ], encoder.encode(svgStr));
+          const [oneW, oneH, oneMode] = nativeOne.stderr.trim().split(" ");
+          assert(
+            browserOne.width === Number(oneW) &&
+              browserOne.height === Number(oneH) &&
+              browserOne.alphaMode === oneMode,
+            `[${name}] ${optLabel}: svg2rgba metadata differs from native`,
+          );
+          assertBytesEqual(
+            browserOne.pixels,
+            nativeOne.stdout,
+            `[${name}] ${optLabel}: svg2rgba browser vs native`,
+          );
+          console.log(
+            `  ✓ svg2rgba [${name}] ${optLabel} browser vs native`,
+          );
         }
       }
 

@@ -9,7 +9,7 @@
 
 use std::io::{Read, Write};
 
-use usvg2rgba::core::{rasterize, RgbaOptions};
+use stln2rgba::core::{rasterize, RgbaOptions};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

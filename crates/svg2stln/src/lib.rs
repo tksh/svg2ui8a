@@ -3,10 +3,10 @@ mod svg_core;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-pub fn svg2usvg(svg: &str) -> Result<Box<[u8]>, JsValue> {
+pub fn svg2stln(svg: &str) -> Result<Box<[u8]>, JsValue> {
     svg_core::svg(svg)
         .map(|bytes| bytes.into_boxed_slice())
-        .map_err(|e| JsValue::from_str(&format!("svg2usvg failed: {}", e)))
+        .map_err(|e| JsValue::from_str(&format!("svg2stln failed: {}", e)))
 }
 
 pub use svg_core::svg;
@@ -21,18 +21,18 @@ mod tests {
 
     #[test]
     fn simple_svg_returns_non_empty() {
-        let result = svg("<svg shape-rendering=\"geometricPrecision\"><rect width=\"100\" height=\"100\" fill=\"red\"/></svg>");
+        let result = svg("<svg shape-rendering=\"geometricPrecision\"><path d=\"M 10 10 L 90 90\" stroke=\"#ff0000\" stroke-width=\"8\" fill=\"none\"/></svg>");
         assert!(result.is_ok());
         let bytes = result.unwrap();
         assert!(
             !bytes.is_empty(),
-            "svg2usvg should return non-empty bytes for a simple SVG"
+            "svg2stln should return non-empty bytes for a simple SVG"
         );
     }
 
     #[test]
     fn same_svg_identical_bytes() {
-        let svg_str = "<svg shape-rendering=\"geometricPrecision\"><rect width=\"100\" height=\"100\" fill=\"red\"/></svg>";
+        let svg_str = "<svg shape-rendering=\"geometricPrecision\"><path d=\"M 10 10 L 90 90\" stroke=\"#ff0000\" stroke-width=\"8\" fill=\"none\"/></svg>";
         let result1 = svg(&svg_str);
         let result2 = svg(&svg_str);
         assert!(result1.is_ok() && result2.is_ok());
@@ -92,7 +92,10 @@ mod tests {
 
     #[test]
     fn round_trip_through_intermediate_is_content_verifying() {
-        let svg_str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10" shape-rendering="geometricPrecision"><rect x="2" y="2" width="6" height="6" fill="#ff0000" opacity="0.5"/></svg>"##;
+        // Element-level `opacity` would wrap the shape in a nested group,
+        // which the Straightlines subset rejects; stroke-opacity is the
+        // subset-sanctioned way to express translucent strokes.
+        let svg_str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10" shape-rendering="geometricPrecision"><path d="M 1 5 L 9 5" stroke="#ff0000" stroke-width="4" stroke-opacity="0.5" fill="none"/></svg>"##;
         let bytes = svg(svg_str).expect("svg should convert");
         let intermediate = IntermediateV1::decode(&bytes).expect("decode should succeed");
 
@@ -101,17 +104,10 @@ mod tests {
             intermediate.shape_rendering,
             ShapeRendering::GeometricPrecision
         );
-        // usvg models element-level `opacity` as a compositing wrapper group;
-        // the DTO preserves that group instead of flattening the opacity.
         let groups = groups_of(&intermediate.root);
-        assert_eq!(groups.len(), 1, "expected one wrapper group");
-        assert!(
-            (groups[0].opacity - 0.5).abs() < 1e-3,
-            "group opacity should be 0.5, got {}",
-            groups[0].opacity
-        );
+        assert!(groups.is_empty(), "no wrapper groups expected");
 
-        let shapes = shapes_of(groups[0]);
+        let shapes = shapes_of(&intermediate.root);
         assert_eq!(shapes.len(), 1, "expected exactly one shape");
 
         let shape = shapes[0];
@@ -119,8 +115,10 @@ mod tests {
             !shape.path_data.is_empty(),
             "geometry must be present in path_data"
         );
-        assert_eq!(shape.fill, Some(Paint::Color(0xff0000)));
-        assert!((shape.fill_opacity - 1.0).abs() < 1e-6);
+        assert_eq!(shape.fill, None);
+        let stroke = shape.stroke.as_ref().expect("stroked input");
+        assert_eq!(stroke.paint, Paint::Color(0xff0000));
+        assert!((stroke.opacity - 0.5).abs() < 1e-6);
 
         // encode → decode → the same DTO (content-preserving round trip).
         let re_decoded =
@@ -250,6 +248,132 @@ mod tests {
             result.is_err(),
             "a document with no paths has no declared rendering to verify"
         );
+    }
+
+    // --- Straightlines subset freeze (rename plan Phase 2) ---
+
+    const SUBSET_HEAD: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10" shape-rendering="geometricPrecision">"##;
+
+    fn subset_svg(body: &str) -> String {
+        format!("{}{}</svg>", SUBSET_HEAD, body)
+    }
+
+    #[test]
+    fn two_point_line_accepted() {
+        assert!(svg(&subset_svg(
+            r##"<path d="M 1 5 L 9 5" stroke="#000" stroke-width="2" fill="none"/>"#
+        ))
+        .is_ok());
+    }
+
+    #[test]
+    fn curve_rejected() {
+        assert!(svg(&subset_svg(
+            r##"<path d="M 1 5 Q 5 0 9 5" stroke="#000" stroke-width="2" fill="none"/>"#
+        ))
+        .is_err(), "quadratic curves are outside the subset");
+    }
+
+    #[test]
+    fn cubic_rejected() {
+        assert!(svg(&subset_svg(
+            r##"<path d="M 1 5 C 3 0 7 10 9 5" stroke="#000" stroke-width="2" fill="none"/>"#
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn arc_rejected() {
+        assert!(svg(&subset_svg(
+            r##"<path d="M 2 5 A 3 3 0 0 1 8 5" stroke="#000" stroke-width="2" fill="none"/>"#
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn polyline_rejected() {
+        assert!(svg(&subset_svg(
+            r##"<path d="M 1 5 L 5 1 L 9 5" stroke="#000" stroke-width="2" fill="none"/>"#
+        ))
+        .is_err(), "multi-segment paths are outside the subset");
+    }
+
+    #[test]
+    fn closed_shape_rejected() {
+        assert!(svg(&subset_svg(
+            r##"<path d="M 2 2 L 8 2 L 8 8 Z" fill="#000"/>"#
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn rect_element_rejected() {
+        assert!(svg(&subset_svg(r##"<rect width="10" height="10" fill="#000"/>"##
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn nested_group_rejected() {
+        let body = r##"<g stroke="#000" stroke-width="2"><g><path d="M 1 5 L 9 5" stroke="#000" stroke-width="2" fill="none"/></g></g>"##;
+        assert!(
+            svg(&subset_svg(body)).is_err(),
+            "nested groups are outside the subset"
+        );
+    }
+
+    #[test]
+    fn gradient_fill_rejected() {
+        // userSpaceOnUse so the gradient resolves onto the zero-area line
+        // bbox (objectBoundingBox gradients are dropped by usvg for lines).
+        let body = r##"<defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0"><stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/></linearGradient></defs><path d="M 1 5 L 9 5" stroke="url(#g)" stroke-width="2" fill="none"/>"##;
+        assert!(
+            svg(&subset_svg(body)).is_err(),
+            "gradient paints are outside the subset"
+        );
+    }
+
+    #[test]
+    fn clip_path_rejected() {
+        let body = r##"<defs><clipPath id="c"><path d="M 1 1 L 9 9"/></clipPath></defs><g clip-path="url(#c)"><path d="M 1 5 L 9 5" stroke="#000" stroke-width="2" fill="none"/></g>"##;
+        assert!(
+            svg(&subset_svg(body)).is_err(),
+            "clip-path is outside the subset"
+        );
+    }
+
+    #[test]
+    fn mask_rejected() {
+        let body = r##"<defs><mask id="m"><path d="M 1 1 L 9 9" stroke="#fff" stroke-width="4"/></mask></defs><g mask="url(#m)"><path d="M 1 5 L 9 5" stroke="#000" stroke-width="2" fill="none"/></g>"##;
+        assert!(
+            svg(&subset_svg(body)).is_err(),
+            "mask is outside the subset"
+        );
+    }
+
+    #[test]
+    fn filter_rejected() {
+        let body = r##"<defs><filter id="f"><feGaussianBlur stdDeviation="1"/></filter></defs><g filter="url(#f)"><path d="M 1 5 L 9 5" stroke="#000" stroke-width="2" fill="none"/></g>"##;
+        assert!(
+            svg(&subset_svg(body)).is_err(),
+            "filters are outside the subset"
+        );
+    }
+
+    #[test]
+    fn element_level_opacity_nesting_rejected() {
+        // usvg models element `opacity` as a wrapper group inside the layer.
+        let body = r##"<g><path d="M 1 5 L 9 5" stroke="#000" stroke-width="2" opacity="0.5" fill="none"/></g>"##;
+        assert!(
+            svg(&subset_svg(body)).is_err(),
+            "element-level opacity (nested wrapper group) is outside the subset"
+        );
+    }
+
+    #[test]
+    fn layer_opacity_and_stroke_opacity_still_accepted() {
+        let body = r##"<g opacity="0.8"><path d="M 1 5 L 9 5" stroke="#000" stroke-width="2" stroke-opacity="0.5" fill="none"/></g>"##;
+        assert!(svg(&subset_svg(body)).is_ok());
     }
 
     #[test]

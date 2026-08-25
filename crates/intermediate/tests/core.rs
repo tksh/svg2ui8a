@@ -205,7 +205,7 @@ fn fill_invalid_opacity_rejected() {
         Value::from(1.5f64), // Invalid: opacity > 1
         Value::from(0u64),
     )]));
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
@@ -217,7 +217,7 @@ fn nan_opacity_rejected() {
         Value::from(f64::NAN),
         Value::from(0u64),
     )]));
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
@@ -232,14 +232,14 @@ fn legacy_shapes_payload_rejected() {
             Value::array([Value::from(10.0f64), Value::from(10.0f64)]),
         ),
     ]);
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
 #[test]
 fn missing_size_rejected() {
     let payload = Value::map([(Value::from("root"), group_node(Vec::<Value>::new(), 1.0f64))]);
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
@@ -303,7 +303,7 @@ fn stroke_width_zero_and_negative_rejected() {
             Value::from(0u64),
             Value::from(0.0f64),
         ))]));
-        let bytes = envelope("svg2ui8a/usvg", 1, payload);
+        let bytes = envelope("svg2ui8a/straightlines", 1, payload);
         assert!(
             IntermediateV1::decode(&bytes).is_err(),
             "stroke width {} must be rejected",
@@ -323,7 +323,7 @@ fn stroke_miterlimit_below_one_rejected() {
         Value::from(0u64),
         Value::from(0.0f64),
     ))]));
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
@@ -338,14 +338,14 @@ fn stroke_opacity_out_of_range_rejected() {
         Value::from(0u64),
         Value::from(0.0f64),
     ))]));
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
 #[test]
 fn group_opacity_out_of_range_rejected() {
     let payload = payload_with_root(Value::array([group_node(Vec::new(), 1.5)]));
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
@@ -360,7 +360,7 @@ fn unknown_linecap_tag_rejected() {
         Value::from(0u64),
         Value::from(0.0f64),
     ))]));
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
@@ -375,7 +375,7 @@ fn unknown_linejoin_tag_rejected() {
         Value::from(0u64),
         Value::from(0.0f64),
     ))]));
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
@@ -387,7 +387,7 @@ fn unknown_node_discriminator_rejected() {
         (Value::from("children"), Value::array(Vec::<Value>::new())),
     ]);
     let payload = payload_with_root(Value::array([node]));
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
@@ -400,7 +400,7 @@ fn root_shape_discriminator_rejected() {
         Value::from(1.0f64),
         Value::from(0u64),
     ));
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
@@ -420,7 +420,7 @@ fn dasharray_invalid_entries_rejected() {
             bad,
             Value::from(0.0f64),
         ))]));
-        let bytes = envelope("svg2ui8a/usvg", 1, payload);
+        let bytes = envelope("svg2ui8a/straightlines", 1, payload);
         assert!(IntermediateV1::decode(&bytes).is_err());
     }
 }
@@ -439,7 +439,7 @@ fn negative_dashoffset_accepted_but_nan_rejected() {
         ))],
         1.0,
     ));
-    assert!(IntermediateV1::decode(&envelope("svg2ui8a/usvg", 1, ok)).is_ok());
+    assert!(IntermediateV1::decode(&envelope("svg2ui8a/straightlines", 1, ok)).is_ok());
 
     let bad = payload_with_root(Value::array([stroked_shape(stroke_map(
         Value::from(2.0f64),
@@ -450,7 +450,7 @@ fn negative_dashoffset_accepted_but_nan_rejected() {
         Value::from(0u64),
         Value::from(f64::NAN),
     ))]));
-    assert!(IntermediateV1::decode(&envelope("svg2ui8a/usvg", 1, bad)).is_err());
+    assert!(IntermediateV1::decode(&envelope("svg2ui8a/straightlines", 1, bad)).is_err());
 }
 
 #[test]
@@ -461,7 +461,7 @@ fn fill_color_out_of_range_rejected() {
         Value::from(1.0f64),
         Value::from(0u64),
     )]));
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }
 
@@ -475,7 +475,7 @@ fn missing_required_keys_rejected() {
         (Value::from("fill_opacity"), Value::from(1.0f64)),
     ]);
     let bytes = envelope(
-        "svg2ui8a/usvg",
+        "svg2ui8a/straightlines",
         1,
         payload_with_root(Value::array([no_stroke])),
     );
@@ -489,7 +489,7 @@ fn missing_required_keys_rejected() {
         (Value::from("stroke"), Value::from(0u64)),
     ]);
     let bytes = envelope(
-        "svg2ui8a/usvg",
+        "svg2ui8a/straightlines",
         1,
         payload_with_root(Value::array([no_fill_opacity])),
     );
@@ -501,7 +501,7 @@ fn missing_required_keys_rejected() {
         (Value::from("opacity"), Value::from(1.0f64)),
     ]);
     let bytes = envelope(
-        "svg2ui8a/usvg",
+        "svg2ui8a/straightlines",
         1,
         payload_with_root(Value::array([no_children])),
     );
@@ -519,14 +519,14 @@ fn deep_group_nesting_rejected_beyond_limit() {
 
     // At the limit: accepted.
     let at_limit = payload_with_root(nested_groups(MAX_GROUP_DEPTH - 1));
-    if let Err(e) = IntermediateV1::decode(&envelope("svg2ui8a/usvg", 1, at_limit)) {
+    if let Err(e) = IntermediateV1::decode(&envelope("svg2ui8a/straightlines", 1, at_limit)) {
         panic!("at_limit should decode, got: {}", e);
     }
 
     // One deeper: rejected with the DTO's own message, not a stack overflow
     // and not a codec-internal recursion error.
     let too_deep = payload_with_root(nested_groups(MAX_GROUP_DEPTH));
-    match IntermediateV1::decode(&envelope("svg2ui8a/usvg", 1, too_deep)) {
+    match IntermediateV1::decode(&envelope("svg2ui8a/straightlines", 1, too_deep)) {
         Err(DecodeError::InvalidPayload(msg)) => {
             assert!(msg.contains("maximum depth"), "unexpected error: {}", msg);
         }
@@ -549,7 +549,7 @@ fn shape_rendering_rejections() {
     };
 
     // Missing key entirely.
-    let bytes = envelope("svg2ui8a/usvg", 1, base(vec![]));
+    let bytes = envelope("svg2ui8a/straightlines", 1, base(vec![]));
     assert!(
         IntermediateV1::decode(&bytes).is_err(),
         "missing shape_rendering must be rejected"
@@ -558,7 +558,7 @@ fn shape_rendering_rejections() {
     // Unknown tag.
     for tag in [2u64, 7, u64::MAX] {
         let payload = base(vec![(Value::from("shape_rendering"), Value::from(tag))]);
-        let bytes = envelope("svg2ui8a/usvg", 1, payload);
+        let bytes = envelope("svg2ui8a/straightlines", 1, payload);
         assert!(
             IntermediateV1::decode(&bytes).is_err(),
             "shape_rendering tag {} must be rejected",
@@ -571,6 +571,6 @@ fn shape_rendering_rejections() {
         Value::from("shape_rendering"),
         Value::from("geometricPrecision"),
     )]);
-    let bytes = envelope("svg2ui8a/usvg", 1, payload);
+    let bytes = envelope("svg2ui8a/straightlines", 1, payload);
     assert!(IntermediateV1::decode(&bytes).is_err());
 }

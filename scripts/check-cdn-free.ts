@@ -1,7 +1,8 @@
 /**
  * CDN-free check (AGENTS.md §5.2, engineering-playbook §5.2, task.md §5).
  *
- * Bundles each of the package's three subpath entry points and greps the
+ * Bundles each of the package's four subpath entry points (root + three
+ * leaves) and greps the
  * output for `https://` / `http://` references on non-comment lines. A match
  * means a runtime CDN import slipped into the browser bundle; the build must
  * abort.
@@ -53,7 +54,12 @@ function hasRuntimeUrl(bundleOutput: string): boolean {
 }
 
 export function runCheck(): void {
-  const entries = ["src/mod.ts", "src/usvg.ts", "src/rgba.ts"];
+  const entries = [
+    "src/mod.ts",
+    "src/svg2rgba.ts",
+    "src/stln.ts",
+    "src/stln-rgba.ts",
+  ];
   let failed = false;
   for (const entry of entries) {
     const output = bundle(entry);

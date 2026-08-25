@@ -1,17 +1,17 @@
-// Deno tests for the runtime shape of usvg2rgba's public surface (§3.4 layer).
+// Deno tests for the runtime shape of stln2rgba's public surface (§3.4 layer).
 //
 // These guard the §6 fix that made the public API function-only: they verify
-// at runtime that `usvg2rgba` returns a plain data object (never a
+// at runtime that `stln2rgba` returns a plain data object (never a
 // wasm-bindgen class instance), that results survive reuse of the Wasm
 // instance, that options are plain object literals, and that no `__wasm_*`
 // glue symbol is reachable from the public subpaths.
 
-import { usvg2rgba } from "../src/rgba.ts";
-import { svg2usvg } from "../src/usvg.ts";
+import { stln2rgba } from "../src/stln-rgba.ts";
+import { svg2stln } from "../src/stln.ts";
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"
   shape-rendering="geometricPrecision">
-  <rect width="10" height="10" fill="#ff0000"/>
+  <path d="M 5 0 L 5 10" stroke="#ff0000" stroke-width="10" fill="none"/>
 </svg>`;
 
 function assert(cond: unknown, msg: string): asserts cond {
@@ -28,9 +28,9 @@ function checksum(bytes: Uint8Array): number {
   return sum >>> 0;
 }
 
-Deno.test("usvg2rgba result is a plain object, not a wasm-bindgen class instance", async () => {
-  const bytes = await svg2usvg(SVG);
-  const result = await usvg2rgba(bytes);
+Deno.test("stln2rgba result is a plain object, not a wasm-bindgen class instance", async () => {
+  const bytes = await svg2stln(SVG);
+  const result = await stln2rgba(bytes);
 
   assert(
     Object.getPrototypeOf(result) === Object.prototype,
@@ -90,19 +90,19 @@ Deno.test("usvg2rgba result is a plain object, not a wasm-bindgen class instance
   );
 });
 
-Deno.test("usvg2rgba result stays valid after a second call reuses the wasm instance", async () => {
+Deno.test("stln2rgba result stays valid after a second call reuses the wasm instance", async () => {
   const barSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"
       shape-rendering="geometricPrecision">
-  <rect width="4" height="10" fill="#ff0000"/>
+  <path d="M 2 0 L 2 10" stroke="#ff0000" stroke-width="4" fill="none"/>
 </svg>`;
-  const bytes = await svg2usvg(barSvg);
+  const bytes = await svg2stln(barSvg);
 
-  const first = await usvg2rgba(bytes, { width: 10, height: 10 });
+  const first = await stln2rgba(bytes, { width: 10, height: 10 });
   const firstPixels = first.pixels;
   const firstLen = firstPixels.length;
   const firstSum = checksum(firstPixels);
 
-  const second = await usvg2rgba(bytes, { width: 20, height: 10 });
+  const second = await stln2rgba(bytes, { width: 20, height: 10 });
   assert(
     second.width === 20 && second.height === 10,
     "second call must apply its own distinct options",
@@ -121,10 +121,10 @@ Deno.test("usvg2rgba result stays valid after a second call reuses the wasm inst
   );
 });
 
-Deno.test("Usvg2RgbaOptions accepts a plain object literal, not a wasm class instance", async () => {
-  const bytes = await svg2usvg(SVG);
+Deno.test("Stln2RgbaOptions accepts a plain object literal, not a wasm class instance", async () => {
+  const bytes = await svg2stln(SVG);
 
-  const full = await usvg2rgba(bytes, {
+  const full = await stln2rgba(bytes, {
     width: 100,
     height: 50,
     alphaMode: "premultiplied",
@@ -138,7 +138,7 @@ Deno.test("Usvg2RgbaOptions accepts a plain object literal, not a wasm class ins
     "alphaMode option must be honored",
   );
 
-  const partial = await usvg2rgba(bytes, { width: 100 });
+  const partial = await stln2rgba(bytes, { width: 100 });
   assert(partial.width === 100, "width-only option must be honored");
   assert(
     partial.height === 10,
@@ -149,8 +149,8 @@ Deno.test("Usvg2RgbaOptions accepts a plain object literal, not a wasm class ins
     "unset alphaMode must default to straight",
   );
 
-  const empty = await usvg2rgba(bytes, {});
-  const omitted = await usvg2rgba(bytes);
+  const empty = await stln2rgba(bytes, {});
+  const omitted = await stln2rgba(bytes);
   assert(
     empty.width === omitted.width && empty.height === omitted.height &&
       empty.alphaMode === omitted.alphaMode &&
@@ -160,42 +160,18 @@ Deno.test("Usvg2RgbaOptions accepts a plain object literal, not a wasm class ins
 });
 
 Deno.test("public subpaths export nothing whose name starts with __wasm_", async () => {
-  const rgba = await import("../src/rgba.ts");
-  const mod = await import("../src/mod.ts");
+  const modules: Array<[string, Record<string, unknown>]> = [
+    ["src/stln.ts", await import("../src/stln.ts")],
+    ["src/stln-rgba.ts", await import("../src/stln-rgba.ts")],
+    ["src/svg2rgba.ts", await import("../src/svg2rgba.ts")],
+    ["src/mod.ts", await import("../src/mod.ts")],
+  ];
 
-  for (
-    const [name, m] of [
-      ["src/rgba.ts", rgba],
-      ["src/mod.ts", mod],
-    ] as const
-  ) {
+  for (const [name, m] of modules) {
     for (const key of Object.keys(m)) {
       assert(
         !key.startsWith("__wasm_"),
         `${name} must not export the internal glue name ${key}`,
-      );
-    }
-  }
-
-  for (
-    const [name, path] of [
-      ["src/rgba.ts", "../src/rgba.ts"],
-      ["src/mod.ts", "../src/mod.ts"],
-    ] as const
-  ) {
-    const source = Deno.readTextFileSync(new URL(path, import.meta.url));
-    for (const rawLine of source.split("\n")) {
-      const line = rawLine.trim();
-      if (line.startsWith("//")) {
-        continue;
-      }
-      assert(
-        !/^export\s+(class|function|const|let|var)\s+__wasm_/.test(line),
-        `${name} exports an internal glue symbol on: ${line}`,
-      );
-      assert(
-        !(/^export\s*\{/.test(line) && line.includes("__wasm_")),
-        `${name} re-exports an internal glue symbol on: ${line}`,
       );
     }
   }

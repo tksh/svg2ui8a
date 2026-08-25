@@ -13,7 +13,7 @@ fn main() {
         .read_to_string(&mut svg)
         .expect("dump_core: failed to read stdin");
 
-    let bytes = svg2usvg::svg(&svg).unwrap_or_else(|e| {
+    let bytes = svg2stln::svg(&svg).unwrap_or_else(|e| {
         eprintln!("dump_core: svg failed: {}", e);
         std::process::exit(1);
     });

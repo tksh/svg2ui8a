@@ -1,4 +1,4 @@
-// Native rasterization core for usvg2rgba.
+// Native rasterization core for stln2rgba.
 
 use intermediate::IntermediateV1;
 use resvg::tiny_skia::{Pixmap, Transform};
@@ -37,16 +37,16 @@ pub struct RgbaResult {
 /// panicked on.
 pub fn rasterize(bytes: &[u8], options: &RgbaOptions) -> Result<RgbaResult, String> {
     let dto =
-        IntermediateV1::decode(bytes).map_err(|e| format!("usvg2rgba decode error: {}", e))?;
+        IntermediateV1::decode(bytes).map_err(|e| format!("stln2rgba decode error: {}", e))?;
 
     let natural_w = dto.size.0;
     let natural_h = dto.size.1;
     if natural_w == 0 || natural_h == 0 {
-        return Err("usvg2rgba error: zero natural size".to_string());
+        return Err("stln2rgba error: zero natural size".to_string());
     }
 
     let tree = IntermediateV1::to_tree(&dto)
-        .map_err(|e| format!("usvg2rgba tree reconstruction error: {}", e))?;
+        .map_err(|e| format!("stln2rgba tree reconstruction error: {}", e))?;
 
     // Apply the sizing rule (constitution §4.3):
     // both omitted → natural; one set → the other is the natural value;
@@ -62,7 +62,7 @@ pub fn rasterize(bytes: &[u8], options: &RgbaOptions) -> Result<RgbaResult, Stri
     };
 
     if render_w == 0 || render_h == 0 {
-        return Err("usvg2rgba error: zero requested size".to_string());
+        return Err("stln2rgba error: zero requested size".to_string());
     }
 
     // Scale the drawing to fill the pixmap; identity when rendering at the
@@ -71,7 +71,7 @@ pub fn rasterize(bytes: &[u8], options: &RgbaOptions) -> Result<RgbaResult, Stri
     let scale_y = render_h as f32 / natural_h as f32;
 
     let mut pixmap = Pixmap::new(render_w, render_h)
-        .ok_or_else(|| "usvg2rgba error: pixmap allocation failed".to_string())?;
+        .ok_or_else(|| "stln2rgba error: pixmap allocation failed".to_string())?;
     resvg::render(
         &tree,
         Transform::from_scale(scale_x, scale_y),

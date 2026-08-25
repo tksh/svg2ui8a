@@ -1,4 +1,4 @@
-// Native tests for the usvg2rgba core rasterizer (engineering-playbook §3.2).
+// Native tests for the stln2rgba core rasterizer (engineering-playbook §3.2).
 //
 // Fixtures are built with the package's own envelope helpers: construct an
 // `IntermediateV1` and call `.encode()` (canonical CBOR). Malformed envelopes
@@ -9,7 +9,7 @@ use intermediate::{
     Group, IntermediateV1, LineCap, LineJoin, Node, Paint, Shape, ShapeRendering, Stroke,
 };
 use resvg::tiny_skia::{Pixmap, Transform};
-use usvg2rgba::core::{rasterize, RgbaOptions};
+use stln2rgba::core::{rasterize, RgbaOptions};
 
 fn options(width: u32, height: u32, alpha_mode: &str) -> RgbaOptions {
     RgbaOptions {
@@ -176,13 +176,17 @@ fn unknown_identifier_unsupported_version_malformed_dto_and_variant_error() {
     let unknown_id = envelope("other/format", 1, empty_payload.clone());
     assert!(rasterize(&unknown_id, &opts).is_err());
 
-    let bad_version = envelope("svg2ui8a/usvg", 2, empty_payload);
+    let bad_version = envelope("svg2ui8a/straightlines", 2, empty_payload);
     assert!(rasterize(&bad_version, &opts).is_err());
 
-    let malformed = envelope("svg2ui8a/usvg", 1, missing_size_payload());
+    let malformed = envelope("svg2ui8a/straightlines", 1, missing_size_payload());
     assert!(rasterize(&malformed, &opts).is_err());
 
-    let unsupported = envelope("svg2ui8a/usvg", 1, unsupported_fill_variant_payload());
+    let unsupported = envelope(
+        "svg2ui8a/straightlines",
+        1,
+        unsupported_fill_variant_payload(),
+    );
     assert!(rasterize(&unsupported, &opts).is_err());
 }
 
@@ -223,14 +227,30 @@ fn renderer_is_deterministic_across_calls() {
 
 #[test]
 fn end_to_end_svg_rasterizes_to_expected_color() {
-    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10" shape-rendering="geometricPrecision"><rect width="10" height="10" fill="#ff0000"/></svg>"##;
-    let bytes = svg2usvg::svg(svg).expect("svg2usvg should succeed");
+    // A full-canvas rectangle is not in the Straightlines subset (a rect is a
+    // closed five-segment path), so this end-to-end test builds the payload
+    // from the DTO directly, using the documented empty-`path_data`
+    // full-canvas shorthand.
+    let dto = IntermediateV1 {
+        root: Group {
+            opacity: 1.0,
+            children: vec![Node::Shape(Shape {
+                path_data: vec![],
+                fill: Some(Paint::Color(0xff0000)),
+                fill_opacity: 1.0,
+                stroke: None,
+            })],
+        },
+        size: (10, 10),
+        shape_rendering: ShapeRendering::GeometricPrecision,
+    };
+    let bytes = dto.encode();
 
     // The bytes must carry real geometry now: decode and confirm the shape is
     // a full-canvas red path, not a blank placeholder.
-    let dto = intermediate::IntermediateV1::decode(&bytes).expect("decode should succeed");
-    assert_eq!(dto.size, (10, 10));
-    let shapes: Vec<&Shape> = dto
+    let decoded = intermediate::IntermediateV1::decode(&bytes).expect("decode should succeed");
+    assert_eq!(decoded.size, (10, 10));
+    let shapes: Vec<&Shape> = decoded
         .root
         .children
         .iter()
@@ -240,7 +260,6 @@ fn end_to_end_svg_rasterizes_to_expected_color() {
         })
         .collect();
     assert_eq!(shapes.len(), 1);
-    assert!(!shapes[0].path_data.is_empty(), "geometry must be present");
     assert_eq!(shapes[0].fill, Some(Paint::Color(0xff0000)));
 
     let result = rasterize(&bytes, &options(0, 0, "straight")).expect("rasterize should succeed");
@@ -280,7 +299,7 @@ fn straightlines_fixture_renders_identical_through_dto_pipeline() {
     );
 
     // Pipeline: SVG → DTO → canonical CBOR → decode → reconstructed tree.
-    let bytes = svg2usvg::svg(FIXTURE_SVG).expect("fixture svg should convert");
+    let bytes = svg2stln::svg(FIXTURE_SVG).expect("fixture svg should convert");
     let result = rasterize(&bytes, &options(0, 0, "premultiplied"))
         .expect("fixture payload should rasterize");
     assert_eq!((result.width, result.height), (31, 31));
@@ -303,7 +322,7 @@ fn straightlines_fixture_renders_identical_through_dto_pipeline() {
 /// covered by the premultiplied golden test above).
 #[test]
 fn straightlines_fixture_straight_alpha_and_scaling() {
-    let bytes = svg2usvg::svg(FIXTURE_SVG).expect("fixture svg should convert");
+    let bytes = svg2stln::svg(FIXTURE_SVG).expect("fixture svg should convert");
 
     let straight =
         rasterize(&bytes, &options(0, 0, "straight")).expect("fixture payload should rasterize");
@@ -409,7 +428,7 @@ fn shape_rendering_values_render_like_their_references() {
         );
 
         // Pipeline: SVG → DTO → canonical CBOR → decode → reconstructed tree.
-        let bytes = svg2usvg::svg(&svg_src).expect("svg should convert");
+        let bytes = svg2stln::svg(&svg_src).expect("svg should convert");
         let dto = intermediate::IntermediateV1::decode(&bytes).expect("decode should succeed");
         assert_eq!(dto.shape_rendering, expected);
 

@@ -1,5 +1,5 @@
 [package]
-name = "usvg2rgba"
+name = "stln2rgba"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,4 +13,4 @@ wasm-bindgen = { workspace = true }
 
 [dev-dependencies]
 cbor-core = { workspace = true }
-svg2usvg = { path = "../svg2usvg" }
+svg2stln = { path = "../svg2stln" }

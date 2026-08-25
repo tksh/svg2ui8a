@@ -1,14 +1,16 @@
 /**
- * Build pipeline for `@tksh/svg2ui8a` (engineering-playbook §2, task.md §5).
+ * Build pipeline for `@tksh/svg2ui8a` (engineering-playbook §2, task.md §5,
+ * rename plan Phases 2–3).
  *
- *  1. Compiles both Wasm crates via `wasm-pack --target web`.
+ *  1. Compiles all three Wasm crates via `wasm-pack --target web`.
  *  2. Copies the Wasm binaries to `assets/`.
- *  3. Regenerates `src/usvg.ts`, `src/rgba.ts`, and `src/mod.ts` from the
- *     wasm-pack glue, embedding the Wasm bytes as base64 and calling the
- *     wasm-bindgen `__wbg_init` with those bytes — no runtime fetch
- *     (`constitution` §3.8, `AGENTS.md` §5.2).
- *  4. Verifies the two artifacts are independent Wasm modules
- *     (`constitution` §3.9).
+ *  3. Regenerates `src/stln.ts`, `src/stln-rgba.ts`, `src/svg2rgba.ts`, and
+ *     `src/mod.ts` from the wasm-pack glue, embedding the Wasm bytes as
+ *     base64 and calling the wasm-bindgen `__wbg_init` with those bytes — no
+ *     runtime fetch (`constitution` §3.8, `AGENTS.md` §5.2).
+ *  4. Verifies the three artifacts are independent Wasm modules
+ *     (`constitution` §3.9, as amended for three independently-loadable
+ *     capabilities).
  *  5. Runs the CDN-free check; aborts the build on failure.
  *
  * wasm-pack 0.15.0 is the recorded toolchain version for this script.
@@ -95,32 +97,32 @@ function base64ToBytes(b64: string): Uint8Array {
 
 `;
 
-function generateUsvgTs(glue: string, wasm: Uint8Array): string {
+function generateStlnTs(glue: string, wasm: Uint8Array): string {
   const inlined = inlineGlue(glue, [
-    ["export function svg2usvg(svg) {", "function __wasm_svg2usvg(svg) {"],
+    ["export function svg2stln(svg) {", "function __wasm_svg2stln(svg) {"],
   ]);
   return GENERATED_HEADER +
     inlined +
     "\n" +
     `const WASM_BASE64 = ${JSON.stringify(base64(wasm))};\n\n` +
     BASE64_HELPER +
-    `export async function svg2usvg(svg: string): Promise<Uint8Array> {
+    `export async function svg2stln(svg: string): Promise<Uint8Array> {
   if (!initialized) {
     await __wbg_init({ module_or_path: base64ToBytes(WASM_BASE64) });
     initialized = true;
   }
-  return __wasm_svg2usvg(svg);
+  return __wasm_svg2stln(svg);
 }
 `;
 }
 
-function generateRgbaTs(glue: string, wasm: Uint8Array): string {
+function generateStlnRgbaTs(glue: string, wasm: Uint8Array): string {
   const inlined = inlineGlue(glue, [
     ["RgbaResult", "__wasm_RgbaResult"],
-    ["Usvg2RgbaOptions", "__wasm_Usvg2RgbaOptions"],
+    ["Stln2RgbaOptions", "__wasm_Stln2RgbaOptions"],
     [
-      "export function usvg2rgba(usvg, options) {",
-      "function __wasm_usvg2rgba(usvg, options) {",
+      "export function stln2rgba(usvg, options) {",
+      "function __wasm_stln2rgba(usvg, options) {",
     ],
     ["export class ", "class "],
   ]);
@@ -128,7 +130,7 @@ function generateRgbaTs(glue: string, wasm: Uint8Array): string {
     inlined +
     "\n" +
     `const WASM_BASE64 = ${JSON.stringify(base64(wasm))};\n\n` +
-    `export interface Usvg2RgbaOptions {
+    `export interface Stln2RgbaOptions {
   width?: number;
   height?: number;
   alphaMode?: "straight" | "premultiplied";
@@ -143,19 +145,71 @@ export interface RgbaResult {
 
 ` +
     BASE64_HELPER +
-    `export async function usvg2rgba(
+    `export async function stln2rgba(
   usvg: Uint8Array,
-  options?: Usvg2RgbaOptions,
+  options?: Stln2RgbaOptions,
 ): Promise<RgbaResult> {
   if (!initialized) {
     await __wbg_init({ module_or_path: base64ToBytes(WASM_BASE64) });
     initialized = true;
   }
-  const opts = new __wasm_Usvg2RgbaOptions();
+  const opts = new __wasm_Stln2RgbaOptions();
   opts.width = options?.width ?? 0;
   opts.height = options?.height ?? 0;
   opts.alpha_mode = options?.alphaMode ?? "straight";
-  const result = __wasm_usvg2rgba(usvg, opts);
+  const result = __wasm_stln2rgba(usvg, opts);
+  return {
+    width: result.width,
+    height: result.height,
+    alphaMode: result.alpha_mode,
+    pixels: result.pixels,
+  };
+}
+`;
+}
+
+function generateSvg2RgbaTs(glue: string, wasm: Uint8Array): string {
+  const inlined = inlineGlue(glue, [
+    ["RgbaResult", "__wasm_RgbaResult"],
+    ["Svg2RgbaOptions", "__wasm_Svg2RgbaOptions"],
+    [
+      "export function svg2rgba(svg, options) {",
+      "function __wasm_svg2rgba(svg, options) {",
+    ],
+    ["export class ", "class "],
+  ]);
+  return GENERATED_HEADER +
+    inlined +
+    "\n" +
+    `const WASM_BASE64 = ${JSON.stringify(base64(wasm))};\n\n` +
+    `export interface Svg2RgbaOptions {
+  width?: number;
+  height?: number;
+  alphaMode?: "straight" | "premultiplied";
+}
+
+export interface RgbaResult {
+  width: number;
+  height: number;
+  alphaMode: string;
+  pixels: Uint8Array;
+}
+
+` +
+    BASE64_HELPER +
+    `export async function svg2rgba(
+  svg: string,
+  options?: Svg2RgbaOptions,
+): Promise<RgbaResult> {
+  if (!initialized) {
+    await __wbg_init({ module_or_path: base64ToBytes(WASM_BASE64) });
+    initialized = true;
+  }
+  const opts = new __wasm_Svg2RgbaOptions();
+  opts.width = options?.width ?? 0;
+  opts.height = options?.height ?? 0;
+  opts.alpha_mode = options?.alphaMode ?? "straight";
+  const result = __wasm_svg2rgba(svg, opts);
   return {
     width: result.width,
     height: result.height,
@@ -168,38 +222,44 @@ export interface RgbaResult {
 
 function generateModTs(): string {
   return `/**
- * Re-exports the two public functions and types from the svg2ui8a package.
+ * Re-exports the public functions and types from the svg2ui8a package.
  * Regenerated by \`scripts/build.ts\`; content is the hand-maintained surface.
  */
-export { svg2usvg } from "./usvg.ts";
-export { usvg2rgba } from "./rgba.ts";
-export type { RgbaResult, Usvg2RgbaOptions } from "./rgba.ts";
+export { svg2rgba } from "./svg2rgba.ts";
+export type { Svg2RgbaOptions } from "./svg2rgba.ts";
+export { svg2stln } from "./stln.ts";
+export { stln2rgba } from "./stln-rgba.ts";
+export type { RgbaResult, Stln2RgbaOptions } from "./stln-rgba.ts";
 `;
 }
 
 function verifyWasmExports(): void {
-  const svg = new WebAssembly.Module(
-    Deno.readFileSync(join(ASSETS_DIR, "svg2usvg_bg.wasm")),
+  const modules = Object.fromEntries(
+    ["svg2stln", "stln2rgba", "svg2rgba"].map((crate) => {
+      const mod = new WebAssembly.Module(
+        Deno.readFileSync(join(ASSETS_DIR, `${crate}_bg.wasm`)),
+      );
+      return [crate, WebAssembly.Module.exports(mod).map((e) => e.name)];
+    }),
   );
-  const svgExports = WebAssembly.Module.exports(svg).map((e) => e.name);
-  const rgba = new WebAssembly.Module(
-    Deno.readFileSync(join(ASSETS_DIR, "usvg2rgba_bg.wasm")),
-  );
-  const rgbaExports = WebAssembly.Module.exports(rgba).map((e) => e.name);
 
-  if (!svgExports.includes("svg2usvg")) {
-    throw new Error("svg2usvg_bg.wasm is missing the svg2usvg export");
+  for (
+    const [crate, expected] of [
+      ["svg2stln", "svg2stln"],
+      ["stln2rgba", "stln2rgba"],
+      ["svg2rgba", "svg2rgba"],
+    ] as const
+  ) {
+    if (!modules[crate].includes(expected)) {
+      throw new Error(`${crate}_bg.wasm is missing the ${expected} export`);
+    }
+    for (const other of ["svg2stln", "stln2rgba", "svg2rgba"]) {
+      if (other !== expected && modules[crate].includes(other)) {
+        throw new Error(`${crate}_bg.wasm contains the ${other} export`);
+      }
+    }
   }
-  if (svgExports.includes("usvg2rgba")) {
-    throw new Error("svg2usvg_bg.wasm contains the usvg2rgba export");
-  }
-  if (!rgbaExports.includes("usvg2rgba")) {
-    throw new Error("usvg2rgba_bg.wasm is missing the usvg2rgba export");
-  }
-  if (rgbaExports.includes("svg2usvg")) {
-    throw new Error("usvg2rgba_bg.wasm contains the svg2usvg export");
-  }
-  console.log("  ✓ two independent Wasm artifacts confirmed");
+  console.log("  ✓ three independent Wasm artifacts confirmed");
 }
 
 function main(): void {
@@ -209,7 +269,7 @@ function main(): void {
     `wasm-pack ${run(["wasm-pack", "--version"]).replace("wasm-pack ", "")}`,
   );
 
-  for (const crate of ["svg2usvg", "usvg2rgba"]) {
+  for (const crate of ["svg2rgba", "svg2stln", "stln2rgba"]) {
     console.log(`Building ${crate} Wasm...`);
     run(["wasm-pack", "build", join(CARGO_DIR, crate), "--target", "web"]);
     Deno.copyFileSync(
@@ -221,25 +281,34 @@ function main(): void {
 
   console.log("Regenerating TypeScript wrappers...");
   Deno.writeTextFileSync(
-    join(SRC_DIR, "usvg.ts"),
-    generateUsvgTs(
-      Deno.readTextFileSync(join(CARGO_DIR, "svg2usvg", "pkg", "svg2usvg.js")),
-      Deno.readFileSync(join(CARGO_DIR, "svg2usvg", "pkg", "svg2usvg_bg.wasm")),
+    join(SRC_DIR, "stln.ts"),
+    generateStlnTs(
+      Deno.readTextFileSync(join(CARGO_DIR, "svg2stln", "pkg", "svg2stln.js")),
+      Deno.readFileSync(join(CARGO_DIR, "svg2stln", "pkg", "svg2stln_bg.wasm")),
     ),
   );
   Deno.writeTextFileSync(
-    join(SRC_DIR, "rgba.ts"),
-    generateRgbaTs(
+    join(SRC_DIR, "stln-rgba.ts"),
+    generateStlnRgbaTs(
       Deno.readTextFileSync(
-        join(CARGO_DIR, "usvg2rgba", "pkg", "usvg2rgba.js"),
+        join(CARGO_DIR, "stln2rgba", "pkg", "stln2rgba.js"),
       ),
       Deno.readFileSync(
-        join(CARGO_DIR, "usvg2rgba", "pkg", "usvg2rgba_bg.wasm"),
+        join(CARGO_DIR, "stln2rgba", "pkg", "stln2rgba_bg.wasm"),
       ),
     ),
   );
+  Deno.writeTextFileSync(
+    join(SRC_DIR, "svg2rgba.ts"),
+    generateSvg2RgbaTs(
+      Deno.readTextFileSync(join(CARGO_DIR, "svg2rgba", "pkg", "svg2rgba.js")),
+      Deno.readFileSync(join(CARGO_DIR, "svg2rgba", "pkg", "svg2rgba_bg.wasm")),
+    ),
+  );
   Deno.writeTextFileSync(join(SRC_DIR, "mod.ts"), generateModTs());
-  console.log("  → wrote src/usvg.ts, src/rgba.ts, src/mod.ts");
+  console.log(
+    "  → wrote src/stln.ts, src/stln-rgba.ts, src/svg2rgba.ts, src/mod.ts",
+  );
 
   verifyWasmExports();
 
