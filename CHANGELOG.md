@@ -1,3 +1,38 @@
+# 0.3.0
+
+- **Pivot: remove Straightlines / CBOR intermediate, keep `svg2rgba`, add
+  `svg2usvg` (`Uint8Array` of usvg bytes)
+  (`0.3.0-pivot-decommission-intermediate-add-svg2usvg.md`).** The custom CBOR
+  representation failed to make cache-hit renders cheaper: `usvg::Tree` can only
+  be reconstituted by re-parsing SVG XML (`pub(crate)` fields, no public
+  constructors, verified against `usvg 0.47.0`), so the intermediate's
+  re-serialization round-trip could not bypass the re-parse it was designed to
+  avoid. The human has decided to decommission the strategy entirely rather than
+  paper over it with numeric encodings.
+  - Removed: `crates/intermediate`, `crates/svg2stln`, `crates/stln2rgba`,
+    `cbor-core` (`0.10.1`), Straightlines fixtures
+    (`tests/fixtures/straightlines-sample.{svg,cbor}`), and their tests. Any
+    cached `.cbor` bytes from `0.2.0` are no longer decodable (intentional; no
+    external consumer confirmed, per `0.2.0` rationale).
+  - Kept: `svg2rgba` with its current functionality (SVG → RGBA `Uint8Array`, no
+    intermediate).
+  - Added: `svg2usvg` (`crates/svg2usvg`, `src/svg2usvg.ts`,
+    `assets/svg2usvg_bg.wasm`) — SVG string in, `Uint8Array` (UTF-8 bytes of the
+    normalized usvg XML via default `XmlOptions`, no pretty-print) out. Every
+    public payload remains `Uint8Array` (`svg2ui8a` naming); both exports are
+    independent Wasm artifacts with independent subpath imports (`./svg2usvg`,
+    `./svg2rgba`).
+  - Docs: `docs/project-constitution.md`, `docs/system-architecture.md`,
+    `docs/engineering-playbook.md`, `AGENTS.md` rewritten for two products and
+    no proprietary serialization; fonts/BBox changed from permanently forbidden
+    to **postponed** (may become a faithful `linebender/resvg` wrapper later; no
+    chase of latest upstream, no package-unique features).
+  - Archive: `docs/plans/cbor-file-intermediate.md`,
+    `intermediate-v1-groups-strokes.md`, `intermediate-v1-shape-rendering.md`,
+    `intermediate-v1-numeric-path-data.md`,
+    `svg2rgba-pipeline-and-straightlines-rename.md` moved verbatim to
+    `docs/archive/` as a historical record that the strategy did not work out.
+
 # 0.2.0
 
 - **Breaking rename (`svg2rgba-pipeline-and-straightlines-rename.md`).** The

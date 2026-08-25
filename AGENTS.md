@@ -14,15 +14,12 @@ them. Do not pre-emptively read every markdown file in `./docs/`.
 
 This repository hosts the JSR package **`@tksh/svg2ui8a`**: a Wasm
 SVG-processing toolkit whose inputs and outputs are all `Uint8Array`. The
-package has three functions, in three subpath imports:
+package has two functions, in two subpath imports:
 
 - `jsr:@tksh/svg2ui8a/svg2rgba` → `svg2rgba(svg, options?): Promise<RgbaResult>`
-  (general-purpose one-shot)
-- `jsr:@tksh/svg2ui8a/svg2stln` → `svg2stln(svg): Promise<Uint8Array>`
-  (Straightlines subset producer)
-- `jsr:@tksh/svg2ui8a/stln2rgba` →
-  `stln2rgba(stln, options?): Promise<RgbaResult>` (Straightlines subset
-  rasterizer)
+  (general-purpose one-shot SVG → RGBA)
+- `jsr:@tksh/svg2ui8a/svg2usvg` → `svg2usvg(svg): Promise<Uint8Array>` (SVG →
+  normalized usvg XML bytes, UTF-8)
 
 There is no web application in this repository, no Deno Deploy wiring, and no
 app-side routing. The package is the only thing this repository ships.
@@ -221,11 +218,15 @@ These are hard limits that apply regardless of what the plan says.
 
 - Do not read or modify anything under `./notes/`. That is the human's personal
   design scratchpad, not project documentation.
-- Do not introduce a custom binary serialization format. The serialization is
-  **CBOR** (RFC 8949) and is fixed. See `./docs/project-constitution.md` §3.7.
-- Do not add fonts or font-handling code. The project has a hard constraint of
-  no fonts.
-- Do not add BBox-related code. The project does not use BBox.
+- Do not introduce a proprietary binary serialization format. `svg2usvg` output
+  is standard SVG XML bytes (UTF-8) produced by `usvg` with default
+  `XmlOptions`; the package has no custom serialization. See
+  `./docs/project-constitution.md` §3.7.
+- Do not add fonts or font-handling code without a plan. Fonts (text rendering)
+  are **postponed**, not permanently forbidden (`project-constitution.md` §3.1).
+  Do not add them outside an approved plan.
+- Do not add BBox-related code without a plan. BBox is **postponed**, not
+  permanently forbidden (`project-constitution.md` §3.2).
 - Do not add a PNG decoder package (`pngjs`, `sharp`, `@jsquash/png`, etc.) for
   any reason in this package. RGBA output is the package's contract; PNG / WebP
   / image-format encoding is the consumer's.
@@ -233,8 +234,8 @@ These are hard limits that apply regardless of what the plan says.
 - Do not add a Node.js-only runtime fallback. Deno is the only supported
   runtime.
 - Do not introduce a runtime CDN import in the browser bundle. See §5.2.
-- Do not bundle `svg2rgba`, `svg2stln`, and `stln2rgba` into a single Wasm
-  artifact. They are three separate builds, on purpose.
+- Do not bundle `svg2rgba` and `svg2usvg` into a single Wasm artifact. They are
+  two separate builds, on purpose.
 - Do not run `git push` without explicit human approval.
 - Do not merge a PR you opened. The human merges.
 

@@ -400,3 +400,129 @@ dropped by decision.
 - [x] Governing docs, README (three entry points), CHANGELOG `0.2.0` with the
       breaking-rename rationale; `deno.json` version `0.2.0`.
 - [x] Full four-layer `deno task test` green.
+
+---
+
+## 16. `0.3.0` pivot — decommission Straightlines/CBOR, keep `svg2rgba`, add `svg2usvg` (`Uint8Array` of usvg bytes)
+
+Plan: `docs/plans/0.3.0-pivot-decommission-intermediate-add-svg2usvg.md` (DRAFT
+— requires human sign-off before any implementation, per
+`engineering-playbook.md` §4 step 3). Targets `0.3.0`. Motivation: the custom
+CBOR intermediate cannot be made cheaper than the SVG→`usvg::Tree` re-parse it
+was meant to avoid (`usvg::Tree` fields are `pub(crate)`; `to_tree` must
+re-serialize to SVG and re-parse), so the two-stage cache strategy fails its
+performance premise. The pivot removes the proprietary representation entirely
+and keeps the package as a faithful `linebender/resvg` wrapper whose outputs are
+`Uint8Array` (`svg2ui8a`).
+
+### 16.1 Preconditions
+
+- [x] Re-read `AGENTS.md`, `docs/project-constitution.md`,
+      `docs/system-architecture.md`, `docs/engineering-playbook.md` in order.
+- [x] Confirm this plan does not propose: a third serialization format, PNG/WebP
+      output, font/text handling, BBox exposure, native fallback, Node target,
+      or runtime CDN import (`project-constitution.md` §3, `AGENTS.md` §5).
+      Fonts/BBox are explicitly postponed (deferred, not forbidden forever — see
+      plan §2).
+- [x] Get human approval for the plan document before touching source.
+
+### 16.2 Workspace and crate surgery
+
+- [x] New crate `crates/svg2usvg` — `svg(svg: &str) -> Result<Vec<u8>, String>`
+      that parses with feature-disabled `usvg`, rejects `<text>`/`<image>`, and
+      returns the UTF-8 bytes of the normalized usvg output (not an SVG string
+      return — the Wasm boundary is `Uint8Array`). No `intermediate`, no
+      `resvg`, no `cbor-core`.
+- [x] Delete crates `crates/intermediate`, `crates/svg2stln`, `crates/stln2rgba`
+      and all of their `src/`, `examples/`, `tests/` trees.
+- [x] Keep `crates/svg2rgba` with current functionality (SVG → RGBA
+      `Uint8Array`); no CBOR/intermediate involvement; confirm
+      `<text>`/`<image>` rejection, sizing rule, and straight/premultiplied
+      alpha remain byte-identical.
+- [x] Update workspace root `Cargo.toml`: members `[svg2usvg, svg2rgba]`, remove
+      `cbor-core = "0.10.1"` from `[workspace.dependencies]` (no replacement
+      CBOR codec), keep `usvg`/`resvg` `0.47.0` `default-features = false`, keep
+      `wasm-bindgen`.
+- [x] Regenerate `Cargo.lock` (`cargo update` / `cargo tree` verification).
+
+### 16.3 Build pipeline
+
+- [x] Update `scripts/build.ts` to two tracks only: `svg2usvg` →
+      `assets/svg2usvg_bg.wasm`, `svg2rgba` → `assets/svg2rgba_bg.wasm`;
+      regenerate `src/svg2usvg.ts` and `src/svg2rgba.ts` from templates
+      (base64-embedded, no runtime fetch); regenerate `src/mod.ts`; verify two
+      independent Wasm artifacts per `project-constitution.md` §3.9 and abort on
+      CDN-free failure.
+- [x] Update `scripts/check-cdn-free.ts` to bundle the three subpath entry
+      points that will exist after the pivot (`.`, `./svg2rgba`, `./svg2usvg`).
+- [x] Delete `assets/svg2stln_bg.wasm`, `assets/stln2rgba_bg.wasm`,
+      `assets/svg2rgba_bg.wasm` (regenerated), and any stale `crates/*/pkg/`.
+- [x] Update `deno.json` `tasks`: `test:rust` runs only the two remaining
+      crates, `fixtures:regen` removed (no `.cbor` fixture), `build` two-track.
+
+### 16.4 TypeScript surface
+
+- [x] `src/svg2usvg.ts` (generated):
+      `svg2usvg(svg: string): Promise<Uint8Array>` — single `initialized` flag,
+      no caching/memoization/`dispose`/class API (`project-constitution.md`
+      §4.4).
+- [x] `src/svg2rgba.ts` (generated, no hand-edit): unchanged contract
+      `svg2rgba(svg, options?): Promise<RgbaResult>`.
+- [x] `src/mod.ts` (hand-written): `export { svg2usvg } from "./svg2usvg.ts"`
+      and `export { svg2rgba } from "./svg2rgba.ts"` (+ types).
+- [x] `jsr.json` (via `deno.json` `exports`): `".": "./src/mod.ts"`,
+      `"./svg2rgba": "./src/svg2rgba.ts"`, `"./svg2usvg": "./src/svg2usvg.ts"`;
+      remove `./svg2stln` / `./stln2rgba` exports.
+
+### 16.5 Tests
+
+- [x] Remove all Straightlines/CBOR tests (intermediate round-trips, envelope,
+      `.cbor` fixture read-back, `stln` harnesses); remove
+      `tests/fixtures/straightlines-sample.{svg,cbor}` and any `dump_core` that
+      emitted CBOR.
+- [x] Keep/extend `crates/svg2usvg` native tests: non-empty `Vec<u8>`,
+      determinism, malformed SVG → error, `<text>`/`<image>` → error,
+      re-parseable usvg XML, feature verification
+      (`text`/`system-fonts`/`raster-images` excluded).
+- [x] Keep `crates/svg2rgba` native tests (§3.2): natural size, width-only,
+      height-only, non-uniform both, zero-size, default/premultiplied alpha,
+      determinism, malformed/`<text>`/`<image>` → error.
+- [x] Wasm + Deno layers: each export returns correct `Promise` type; Wasm
+      output matches native `core`; `svg2usvg` returns `Uint8Array` that
+      round-trips through `TextDecoder`; `svg2rgba` returns `RgbaResult` with
+      `pixels.length === width*height*4` and correct `alphaMode`; end-to-end
+      `svg2usvg` bytes are valid UTF-8 usvg XML; Astral/CDP browser harness
+      covers both entry points.
+
+### 16.6 Documentation, archiving, and changelog
+
+- [x] Update `README.md` for two entry points (`svg2usvg` + `svg2rgba`), both
+      `Uint8Array` (`svg2ui8a` naming), independent Wasm artifacts.
+- [x] Update governing docs under the task's approved exception to `AGENTS.md`
+      §8 (human grants the exception as part of approving this plan):
+      `docs/project-constitution.md` (two products, no
+      CBOR/intermediate/Straightlines, fonts/BBox postponed-not-forbidden,
+      faithful `linebender/resvg` wrapper policy, §3.7/§3.9/§4/§5/§7),
+      `docs/system-architecture.md` (two-crate workspace, two Wasm builds, no
+      intermediate), `docs/engineering-playbook.md` (§0 baseline, §2–§3
+      test/build, §5 vendoring, §7 pitfalls), `AGENTS.md` §1/§8 (§1 two vs three
+      functions, §8 hard limits re CBOR/fonts/BBox).
+- [x] Move now-unrelated plans to `docs/archive/` (created by this task):
+      `cbor-file-intermediate.md`, `intermediate-v1-groups-strokes.md`,
+      `intermediate-v1-shape-rendering.md`,
+      `intermediate-v1-numeric-path-data.md`,
+      `svg2rgba-pipeline-and-straightlines-rename.md`, and any other fully
+      superseded Straightlines/CBOR plan — kept as a record that the strategy
+      did not work out, per the human's direction.
+- [x] `CHANGELOG.md`: `0.3.0` entry honestly describing the failure of the CBOR
+      intermediate performance strategy (re-parse bottleneck) and the
+      removals/additions; `deno.json` version → `0.3.0`.
+
+### 16.7 Formatting, linting, and final verification
+
+- [x] `cargo fmt` / `deno fmt`, `deno task lint`, `deno task check`.
+- [x] Full `deno task test` green (rust → wasm → wasm:browser → deno).
+- [x] `deno task build` from a clean checkout regenerates exactly
+      `assets/svg2usvg_bg.wasm`, `assets/svg2rgba_bg.wasm`, `src/svg2usvg.ts`,
+      `src/svg2rgba.ts`, `src/mod.ts`; CDN-free check passes; two independent
+      artifacts verified; no `cbor-core` in any artifact's `cargo tree`.
