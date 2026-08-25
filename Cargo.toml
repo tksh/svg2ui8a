@@ -1,14 +1,8 @@
 [workspace]
-members = [
-  "crates/intermediate",
-  "crates/svg2rgba",
-  "crates/svg2stln",
-  "crates/stln2rgba",
-]
+members = ["crates/svg2usvg", "crates/svg2rgba"]
 resolver = "2"
 
 [workspace.dependencies]
-cbor-core = "0.10.1"
 usvg = { version = "0.47.0", default-features = false }
 resvg = { version = "0.47.0", default-features = false }
 wasm-bindgen = "0.2"

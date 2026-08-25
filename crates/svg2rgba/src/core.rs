@@ -92,8 +92,7 @@ pub fn rasterize_svg(svg: &str, options: &RgbaOptions) -> Result<RgbaResult, Str
     })
 }
 
-/// Convert a pixmap (premultiplied RGBA) into the requested alpha mode,
-/// mirroring `stln2rgba`'s pixel handling byte-for-byte.
+/// Convert a pixmap (premultiplied RGBA) into the requested alpha mode.
 fn extract_pixels(pixmap: &Pixmap, width: u32, height: u32, alpha_mode: &str) -> Vec<u8> {
     let premultiplied = alpha_mode == "premultiplied";
     let data = pixmap.data();

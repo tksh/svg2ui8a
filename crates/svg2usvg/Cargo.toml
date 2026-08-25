@@ -1,5 +1,5 @@
 [package]
-name = "svg2stln"
+name = "svg2usvg"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,6 +7,5 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-intermediate = { path = "../intermediate" }
 usvg = { workspace = true }
 wasm-bindgen = { workspace = true }

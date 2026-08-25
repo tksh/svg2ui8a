@@ -1,7 +1,7 @@
-// Native tests for the svg2rgba one-shot rasterizer (rename plan Phase 3).
+// Native tests for the svg2rgba one-shot rasterizer.
 //
 // General-purpose scope: whatever feature-disabled usvg/resvg support, minus
-// `<text>` and `<image>`. No CBOR envelope; determinism is same-pixels only.
+// `<text>` and `<image>`. Determinism is same-pixels only.
 
 use svg2rgba::core::{rasterize_svg, RgbaOptions};
 
@@ -93,7 +93,7 @@ fn image_content_errors() {
 }
 
 #[test]
-fn general_purpose_scope_beyond_the_straightlines_subset() {
+fn general_purpose_scope_supports_rects_curves_gradients() {
     // Rects, curves, and gradients are all in scope for the one-shot path.
     let rect = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#00ff00"/></svg>"##;
     assert!(rasterize_svg(rect, &options(0, 0, "straight")).is_ok());
