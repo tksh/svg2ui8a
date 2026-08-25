@@ -374,3 +374,29 @@ exception granted for this change set; folded into the pending `0.1.1` release).
 - [x] Governing-doc updates under the granted exception (architecture §3.1/§4,
       constitution §4.1, playbook §3.1); CHANGELOG entry folded into `0.1.1`.
 - [x] `deno task build`; hygiene + full four-layer `deno task test`.
+
+---
+
+## 15. `svg2rgba` + Straightlines rename (rename plan Phases 2–4)
+
+Plan: `docs/plans/svg2rgba-pipeline-and-straightlines-rename.md`. Phase 0
+answers (human-approved): three-artifact amendment approved; names as drafted;
+identifier hard-cut to `"svg2ui8a/straightlines"` (no legacy decode); target
+release `0.2.0` after manual `0.1.1` publish. Phase 1 (numeric `path_data`)
+dropped by decision.
+
+- [x] Rename crates `svg2usvg`→`svg2stln`, `usvg2rgba`→`stln2rgba`; functions
+      `svg2stln`/`stln2rgba`; options type `Stln2RgbaOptions`.
+- [x] Hard-cut envelope identifier to `"svg2ui8a/straightlines"`.
+- [x] Freeze the Straightlines subset in the producer with explicit rejection
+      tests: curves/arcs/polylines/closed shapes, rects, nested groups,
+      element-opacity wrapper groups, gradients/patterns, clip/mask/filter.
+- [x] New crate `crates/svg2rgba` + `assets/svg2rgba_bg.wasm` +
+      `src/svg2rgba.ts` + subpath `./svg2rgba`; native tests incl. text/image
+      rejection and general-purpose scope.
+- [x] Build pipeline: three wasm-pack tracks, three independent artifacts
+      verified, four CDN-free bundles.
+- [x] Harnesses + Deno tests updated and extended for all three subpaths.
+- [x] Governing docs, README (three entry points), CHANGELOG `0.2.0` with the
+      breaking-rename rationale; `deno.json` version `0.2.0`.
+- [x] Full four-layer `deno task test` green.

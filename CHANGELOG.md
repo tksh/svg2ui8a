@@ -1,7 +1,39 @@
-# Unreleased
+# 0.2.0
 
-- Nothing yet. The `0.1.1` entry below ships in this checkout's `deno.json` and
-  awaits the human's `deno publish`.
+- **Breaking rename (`svg2rgba-pipeline-and-straightlines-rename.md`).** The
+  cacheable two-stage pipeline is now the Straightlines-only pair: `svg2usvg` →
+  **`svg2stln`** (subpath `./svg2stln`, file `src/stln.ts`) and `usvg2rgba` →
+  **`stln2rgba`** (subpath `./stln2rgba`, file `src/stln-rgba.ts`, options type
+  `Stln2RgbaOptions`). Crates renamed to match; Wasm artifacts are
+  `assets/svg2stln_bg.wasm` / `assets/stln2rgba_bg.wasm`.
+- **Format identifier hard-cut.** Envelope identifier changed from
+  `"svg2ui8a/usvg"` to `"svg2ui8a/straightlines"`; `FORMAT_VERSION` stays `1`
+  under the new identifier. Old-identifier payloads are no longer decodable —
+  recorded here per the human decision that no external `0.1.x` consumers exist.
+- **Straightlines subset frozen (Phase 2).** `svg2stln` now rejects, with
+  explicit errors, anything beyond the subset v1 actually implements:
+  non-two-point or curved paths, closed shapes, nested groups (including usvg's
+  element-`opacity` wrapper groups), gradient/pattern paints, and
+  clip-path/mask/filter. Layer opacity and stroke/fill opacity remain supported.
+  This freeze is what makes the scope safe to optimize later without re-opening
+  the contract.
+- **New general-purpose one-shot subpath (Phase 3): `svg2rgba(svg, options?)`**
+  (`crates/svg2rgba`, `assets/svg2rgba_bg.wasm`, `src/svg2rgba.ts`). SVG string
+  in, RGBA pixels out; supports everything feature-disabled `usvg`/`resvg` do
+  except `<text>`/`<image>`. No CBOR envelope and no cacheable-bytes contract;
+  determinism is same-pixels only. Constitution §3.9 amended from "two Wasm
+  artifacts" to one independent artifact per capability.
+- **Versioning rationale (recorded per plan §2 item 2).** The rename is a
+  breaking change shipped as a **minor** bump `0.1.1 → 0.2.0`: the package is
+  pre-1.0 and the human has adopted the common `0.x` convention that minor
+  releases may break. Constitution §7's literal "majors for breaking" reading
+  applies post-1.0; it was applied under the `0.x` convention here, not amended.
+- Phase 1 of the rename plan (numeric `path_data` encoding) was **dropped** by
+  decision during Phase 0 review: usvg exposes no programmatic tree
+  construction, so reconstruction must format numbers into SVG text anyway;
+  numeric storage would move float-formatting onto the consumer hot path the
+  constitution optimizes for. Rationale recorded here so the idea is not
+  silently re-proposed.
 
 # 0.1.0
 
