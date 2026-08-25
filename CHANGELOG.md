@@ -21,6 +21,18 @@
 
 # 0.1.1
 
+- **Root-level `shape-rendering` support (§14).** The version-1 DTO gains a
+  required root-level `shape_rendering` field (`geometricPrecision` |
+  `crispEdges`). `svg2usvg` now rejects SVG documents that do not declare
+  `shape-rendering` at the root with one of the two permitted values (`auto` is
+  accepted as `geometricPrecision`; per-element overrides and pathless documents
+  are rejected). `usvg2rgba` honors the value: `crispEdges` renders without
+  anti-aliasing, byte-identical to a direct resvg render of the same input.
+  Payloads encoded before this change are rejected by the new decoder.
+  `tests/fixtures/straightlines-sample.svg` now declares
+  `shape-rendering="geometricPrecision"`; regenerate its `.cbor` via
+  `deno task fixtures:regen`. `FORMAT_VERSION` remains `1`; ships in `0.1.1`
+  (human-approved).
 - **Intermediate v1 extension (§13): layers (`<g>`), strokes, and stroke
   styling.** The version-1 DTO now preserves group nesting with per-group
   compositing opacity, stroke color (`stroke`), width, opacity, line cap, line

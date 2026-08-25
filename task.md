@@ -348,3 +348,29 @@ stays `1`.
 - [x] Hygiene: `cargo fmt --check`, `deno fmt --check`, `deno task lint`,
       `deno task check`, full `deno task test`.
 - [x] `CHANGELOG.md` entry for the extension; report per `AGENTS.md` §9.
+
+---
+
+## 14. Intermediate v1 extension: root-level `shape-rendering`
+
+Plan: `docs/plans/intermediate-v1-shape-rendering.md` (human-drafted, approved
+with conditions: `auto` accepted as `geometricPrecision`; governing-doc edit
+exception granted for this change set; folded into the pending `0.1.1` release).
+
+- [x] Add required root-level `shape_rendering` field to the v1 DTO and codec
+      (`0 = geometricPrecision`, `1 = crispEdges`); round-trip + rejection
+      tests.
+- [x] Producer: sentinel-parse enforcement — reject absent / `optimizeSpeed` /
+      invalid values, inconsistent per-element overrides, and pathless
+      documents; accept both permitted values and `auto`.
+- [x] Consumer: emit the attribute on reconstruction so `crispEdges` renders
+      without anti-aliasing; golden tests prove each value matches its direct
+      resvg reference render.
+- [x] Fixture declares `shape-rendering="geometricPrecision"`; `.cbor`
+      regenerated; fix `fixtures:regen` task (Deno tasks do not support paired
+      `<`/`>` redirects — wrap in `sh -c`).
+- [x] Deno-layer rejection/auto-accept tests; crispEdges + geometricPrecision
+      diagonals added to both Wasm harnesses' `SVGS`.
+- [x] Governing-doc updates under the granted exception (architecture §3.1/§4,
+      constitution §4.1, playbook §3.1); CHANGELOG entry folded into `0.1.1`.
+- [x] `deno task build`; hygiene + full four-layer `deno task test`.
