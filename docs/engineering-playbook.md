@@ -52,7 +52,7 @@ All commands assume the working directory is the repository root.
 | `deno task lint`      | Lint all `.ts` files.                          |
 | `deno task check`     | Type-check all `.ts` files.                    |
 | `deno task test`      | Run the full test suite (Rust + Wasm + Deno).  |
-| `deno task test:rust` | Run `cargo test` in both crates.               |
+| `deno task test:rust` | Run `cargo test` in all four crates.           |
 | `deno task test:wasm` | Run the Wasm tests in a headless browser.      |
 | `deno task build`     | Rebuild the two Wasm binaries and the TS glue. |
 
@@ -69,7 +69,7 @@ before committing).
 
 ## 2. The build pipeline
 
-The build pipeline has two parallel tracks (one per Wasm crate) and a single
+The build pipeline has three parallel tracks (one per Wasm crate) and a single
 driver script.
 
 The shared `crates/intermediate/` crate is built into both tracks but produces
@@ -78,7 +78,7 @@ encode, decode, and semantic validation.
 
 ### 2.1 Per-crate track
 
-For each of `crates/svg2usvg/` and `crates/usvg2rgba/`:
+For each of `crates/svg2rgba/`, `crates/svg2stln/`, and `crates/stln2rgba/`:
 
 1. Compile the Rust crate to Wasm with `wasm-pack` (or the implementer's chosen
    equivalent).
@@ -99,10 +99,12 @@ baseline.
 `scripts/build.ts` runs both tracks and verifies the output. The exact output of
 `deno task build` includes:
 
-- `assets/svg2usvg_bg.wasm`
-- `assets/usvg2rgba_bg.wasm`
-- `src/usvg.ts`
-- `src/rgba.ts`
+- `assets/svg2stln_bg.wasm`
+- `assets/stln2rgba_bg.wasm`
+- `assets/svg2rgba_bg.wasm`
+- `src/stln.ts`
+- `src/stln-rgba.ts`
+- `src/svg2rgba.ts`
 - `src/mod.ts`
 
 The `crates/*/pkg/` intermediates may or may not be committed; the implementer
@@ -111,13 +113,14 @@ decides based on what the Wasm-import shape requires. Whatever the choice, the
 
 ### 2.3 What the agent must never do
 
-- Hand-edit `src/usvg.ts` or `src/rgba.ts`. Regenerate them.
+- Hand-edit `src/stln.ts`, `src/stln-rgba.ts`, or `src/svg2rgba.ts`. Regenerate
+  them.
 - Hand-edit anything under `assets/`. The Wasm artifacts are build artifacts.
 - Pin `wasm-pack` to a version not recorded in `scripts/build.ts`. If a version
   bump is needed, edit the script.
 - Commit a build artifact in a way that is not reproducible from source. Both
   Wasm artifacts must be buildable from a clean checkout.
-- Bundle the two crates into a single Wasm artifact. See
+- Bundle the crates into a single Wasm artifact. See
   `docs/project-constitution.md` §3.9.
 - Add a runtime CDN import in the browser bundle. See
   `docs/project-constitution.md` §3.8 and `./AGENTS.md` §5.
@@ -136,11 +139,11 @@ The test layer that follows the **most domain-specific guarantee** is the
 implementation's own; the test layer that follows the **constitution's API
 contract** is the Deno layer.
 
-### 3.1 Rust native tests for `svg2usvg` (`cargo test`)
+### 3.1 Rust native tests for `svg2stln` (`cargo test`)
 
-Located in `crates/svg2usvg/src/core.rs` and `crates/svg2usvg/tests/`. The
-`core` function is tested natively; the `#[wasm_bindgen]` wrapper is tested at
-the Wasm layer.
+Located in `crates/svg2stln/src/svg_core.rs`, `crates/svg2stln/src/lib.rs`, and
+`crates/svg2stln/examples/dump_core.rs`. The `core` function is tested natively;
+the `#[wasm_bindgen]` wrapper is tested at the Wasm layer.
 
 Required test cases (at minimum):
 
@@ -166,9 +169,9 @@ Required test cases (at minimum):
 If the round-trip test fails for a reason the implementer cannot diagnose
 quickly, the implementer stops and escalates per `./AGENTS.md` §10.
 
-### 3.2 Rust native tests for `usvg2rgba` (`cargo test`)
+### 3.2 Rust native tests for `stln2rgba` (`cargo test`)
 
-Located in `crates/usvg2rgba/src/core.rs` and `crates/usvg2rgba/tests/`. The
+Located in `crates/stln2rgba/src/core.rs` and `crates/stln2rgba/tests/`. The
 `core` function is tested natively; the `#[wasm_bindgen]` wrapper is tested at
 the Wasm layer.
 
@@ -202,8 +205,8 @@ section is fixed to **Astral-driven headless Chrome via CDP**
 WebDriver, no `npm:` package. The Wasm layer is verified in two complementary
 harnesses: the Deno-side `deno task test:wasm` (`scripts/test-wasm.ts`) and the
 browser-side `deno task test:wasm:browser` (`scripts/test-wasm-browser.ts`)
-which loads the shipped `src/usvg.ts`/`src/rgba.ts` inside headless Chrome via
-Astral and asserts the same two guarantees there. See
+which loads the shipped `src/stln.ts` / `src/stln-rgba.ts` / `src/svg2rgba.ts`
+inside headless Chrome via Astral and asserts the same two guarantees there. See
 `docs/plans/wasm-browser-tests.md` §§2, 7, 12 for the pin, tradeoff, and CI
 notes.
 
@@ -221,47 +224,49 @@ cross-Wasm flow.
 
 Required test cases (at minimum):
 
-- `svg2usvg` returns a `Uint8Array`.
-- `usvg2rgba` returns an `RgbaResult` whose `pixels` is a `Uint8Array` of
+- `svg2stln` returns a `Uint8Array`.
+- `stln2rgba` returns an `RgbaResult` whose `pixels` is a `Uint8Array` of
   exactly `width * height * 4` bytes.
 - `RgbaResult` carries the alpha mode that the option specified (or the default
   if no option was given).
 - The end-to-end flow
-  `svg2usvg(svgString) → usvg2rgba(bytes, { width, height })` produces RGBA
+  `svg2stln(svgString) → stln2rgba(bytes, { width, height })` produces RGBA
   bytes of the correct size.
-- The bytes returned by `svg2usvg` can be written to a `.cbor` fixture, read
-  back as `Uint8Array`, and passed unchanged to `usvg2rgba` with the same RGBA
+- The bytes returned by `svg2stln` can be written to a `.cbor` fixture, read
+  back as `Uint8Array`, and passed unchanged to `stln2rgba` with the same RGBA
   result.
-- `init` is idempotent: calling `svg2usvg` twice does not re-initialize; calling
-  `usvg2rgba` twice does not re-initialize; calling `svg2usvg` and `usvg2rgba`
+- `init` is idempotent: calling `svg2stln` twice does not re-initialize; calling
+  `stln2rgba` twice does not re-initialize; calling `svg2stln` and `stln2rgba`
   does not cause cross-Wasm `init` interference.
 - The same SVG string always produces the same `usvg` bytes (the determinism
   check, from the JS side).
-- A malformed SVG rejects the `svg2usvg` promise.
-- A malformed `usvg` payload rejects the `usvg2rgba` promise.
-- `usvg2rgba`'s resolved result is a plain data object: its prototype is
+- A malformed SVG rejects the `svg2stln` promise.
+- A malformed Straightlines payload rejects the `stln2rgba` promise.
+- `svg2rgba` resolves to a well-formed `RgbaResult` for general-purpose input;
+  malformed, `<text>`, and `<image>` inputs reject the promise.
+- `stln2rgba`'s resolved result is a plain data object: its prototype is
   `Object.prototype` (not a wasm-bindgen class instance), it exposes no `free()`
   method and no internal wasm-bindgen pointer field, its `pixels` field is a
   genuine `Uint8Array` (not a wrapped subclass), and the result survives
   `structuredClone` and a `JSON.stringify` / `JSON.parse` round-trip without
   throwing or gaining/losing fields.
-- A result returned from one `usvg2rgba` call is unaffected by a subsequent
-  `usvg2rgba` call with different options / output (guards against `pixels`
+- A result returned from one `stln2rgba` call is unaffected by a subsequent
+  `stln2rgba` call with different options / output (guards against `pixels`
   being a live view into reused or freed Wasm linear memory rather than an owned
   copy).
-- `usvg2rgba`'s `options` parameter accepts a bare object literal (not a
+- `stln2rgba`'s `options` parameter accepts a bare object literal (not a
   wasm-bindgen class instance constructed via `new`), including a partial
   literal and an empty object `{}`, and `{}` behaves identically to omitting
   `options` entirely.
-- Neither `src/rgba.ts` nor `src/mod.ts` exports any runtime symbol whose name
-  starts with `__wasm_` (no internal wasm-bindgen glue is reachable from the
-  public subpaths).
+- Neither `src/stln-rgba.ts`, `src/svg2rgba.ts`, nor `src/mod.ts` exports any
+  runtime symbol whose name starts with `__wasm_` (no internal wasm-bindgen glue
+  is reachable from the public subpaths).
 
 ### 3.5 Visual / pixel-equality tests
 
 There are no PNG visual tests. The package produces RGBA pixels, not PNG images.
 Byte-level RGBA golden tests are **allowed** and **recommended** for the
-`usvg2rgba` crate (see §3.2). They are unit tests, not visual tests, and do not
+`stln2rgba` crate (see §3.2). They are unit tests, not visual tests, and do not
 require human review before pass.
 
 ### 3.6 Dependency-feature verification
@@ -282,7 +287,7 @@ The agent must follow this process for any non-trivial change:
 2. **Draft a plan** in `docs/plans/<feature>.md`. The plan must:
    - Quote the section of the constitution that authorizes the change.
    - List the files to be touched, including which of the two crates and which
-     of the two Wasm artifacts are affected.
+     Wasm artifacts are affected.
    - List the tests to be added or updated.
    - State the expected size impact on the Wasm binary.
    - Justify any new dependency under the source tiers in `./AGENTS.md` §5.
@@ -352,9 +357,9 @@ After `deno task build` (or after the bundler runs), the agent must run a check
 that the bundle contains no `import` or `require` referencing a runtime URL. The
 check is part of `deno task build` and a failed check aborts the build.
 
-The check bundles **each of the package's three subpath entry points**
-(`@tksh/svg2ui8a`, `@tksh/svg2ui8a/usvg`, `@tksh/svg2ui8a/rgba`) and greps the
-resulting bundle for `https://`. Any match is a hard fail.
+The check bundles **each of the package's four subpath entry points** (root +
+three leaves) (`@tksh/svg2ui8a`, `@tksh/svg2ui8a/usvg`, `@tksh/svg2ui8a/rgba`)
+and greps the resulting bundle for `https://`. Any match is a hard fail.
 
 This is about the **package's ship artifacts**, not the consumer's bundle. The
 consumer is responsible for their own bundle hygiene.
@@ -393,9 +398,10 @@ sync. The CI must catch this, but the agent should catch it first.
 produce an SVG string. Use the package's own debug output (e.g. print the DTO,
 or hexdump the CBOR) instead.
 
-Adding `resvg` to the `svg2usvg` crate would also violate
+Adding `resvg` to the `svg2stln` crate would also violate
 `docs/project-constitution.md` §3.9 by inflating the Wasm artifact that
-consumers who only need cache keys are forced to load.
+consumers who only need cache keys are forced to load. (Conversely, `svg2rgba`
+legitimately depends on `resvg` — it is a separate artifact.)
 
 ### 7.3 Treating the internal representation as JSON
 
@@ -431,15 +437,15 @@ catch it.
 ### 7.9 Bundling the two crates
 
 The `usvg` and `rgba` crates must stay as two independent Wasm artifacts.
-Bundling them is a violation of `docs/project-constitution.md` §3.9. The build
-pipeline in §2 is structured to make this hard to do by accident; the agent must
-not work around it.
+Bundling them is a violation of `docs/project-constitution.md` §3.9 (one
+independent artifact per capability). The build pipeline in §2 is structured to
+make this hard to do by accident; the agent must not work around it.
 
 ### 7.10 Adding PNG output "to make it more useful"
 
 The package's job ends at RGBA. PNG encoding is a consumer concern. If a future
 `./png` subpath is added, it is added as a _third_ crate and a _third_ Wasm
-artifact, not as a dependency of `usvg2rgba`.
+artifact, not as a dependency of `stln2rgba`.
 
 ### 7.11 Skipping the round-trip test
 
@@ -450,7 +456,7 @@ constitution. They escalate.
 
 ### 7.12 Returning a wasm-bindgen class instance instead of a plain object
 
-`usvg2rgba` must resolve to a plain data object, not a wasm-bindgen class
+`stln2rgba` must resolve to a plain data object, not a wasm-bindgen class
 instance (`docs/project-constitution.md` §4.4). This includes values only
 superficially disguised as plain data — e.g. removing a type export while the
 runtime object is still a class instance carrying a `free()` method and an

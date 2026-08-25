@@ -14,10 +14,15 @@ them. Do not pre-emptively read every markdown file in `./docs/`.
 
 This repository hosts the JSR package **`@tksh/svg2ui8a`**: a Wasm
 SVG-processing toolkit whose inputs and outputs are all `Uint8Array`. The
-package has two functions, in two subpath imports:
+package has three functions, in three subpath imports:
 
-- `jsr:@tksh/svg2ui8a/usvg` → `svg2usvg(svg): Promise<Uint8Array>`
-- `jsr:@tksh/svg2ui8a/rgba` → `usvg2rgba(usvg, options?): Promise<RgbaResult>`
+- `jsr:@tksh/svg2ui8a/svg2rgba` → `svg2rgba(svg, options?): Promise<RgbaResult>`
+  (general-purpose one-shot)
+- `jsr:@tksh/svg2ui8a/svg2stln` → `svg2stln(svg): Promise<Uint8Array>`
+  (Straightlines subset producer)
+- `jsr:@tksh/svg2ui8a/stln2rgba` →
+  `stln2rgba(stln, options?): Promise<RgbaResult>` (Straightlines subset
+  rasterizer)
 
 There is no web application in this repository, no Deno Deploy wiring, and no
 app-side routing. The package is the only thing this repository ships.
@@ -188,7 +193,7 @@ or 3 above) and the vendoring strategy. The human must approve.
 
 - One logical change per commit.
 - Commit messages reference the section of the plan they implement, e.g.
-  `svg2ui8a: add usvg2rgba subpath export`.
+  `svg2ui8a: add stln2rgba subpath export`.
 - Do not force-push, do not rebase other people's work, do not amend commits
   that have been pushed.
 - Do not commit `dist/`, `node_modules/`, `_build/`, `target/`, `vendor/`, or
@@ -228,8 +233,8 @@ These are hard limits that apply regardless of what the plan says.
 - Do not add a Node.js-only runtime fallback. Deno is the only supported
   runtime.
 - Do not introduce a runtime CDN import in the browser bundle. See §5.2.
-- Do not bundle `svg2usvg` and `usvg2rgba` into a single Wasm artifact. They are
-  two separate builds, on purpose.
+- Do not bundle `svg2rgba`, `svg2stln`, and `stln2rgba` into a single Wasm
+  artifact. They are three separate builds, on purpose.
 - Do not run `git push` without explicit human approval.
 - Do not merge a PR you opened. The human merges.
 

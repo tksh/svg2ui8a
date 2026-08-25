@@ -12,7 +12,8 @@ agent must surface the issue, not rewrite the file.
 ## 1. Package layout
 
 `@tksh/svg2ui8a` is a single JSR package. Internally it is a Cargo workspace
-with one shared library crate, two Wasm crates, and a TypeScript wrapper layer:
+with one shared library crate, three Wasm crates, and a TypeScript wrapper
+layer:
 
 ```
 svg2ui8a/
@@ -26,27 +27,40 @@ svg2ui8a/
 ├── .gitignore
 ├── src/
 │   ├── mod.ts
-│   ├── usvg.ts
-│   └── rgba.ts
+│   ├── svg2rgba.ts
+│   ├── stln.ts
+│   └── stln-rgba.ts
 ├── crates/
 │   ├── intermediate/
 │   │   ├── Cargo.toml
 │   │   └── src/lib.rs       # versioned DTO and CBOR codec
-│   ├── svg2usvg/
+│   ├── svg2stln/
+│   │   ├── Cargo.toml
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   └── svg_core.rs
+│   │   └── examples/
+│   ├── stln2rgba/
 │   │   ├── Cargo.toml
 │   │   ├── src/
 │   │   │   ├── lib.rs
 │   │   │   └── core.rs
 │   │   └── tests/
-│   └── usvg2rgba/
+│   └── svg2rgba/
+│       ├── Cargo.toml
+│       ├── src/
+│       │   ├── lib.rs
+│       │   └── core.rs
+│       └── examples/
 │       ├── Cargo.toml
 │       ├── src/
 │       │   ├── lib.rs
 │       │   └── core.rs
 │       └── tests/
 ├── assets/
-│   ├── svg2usvg_bg.wasm
-│   └── usvg2rgba_bg.wasm
+│   ├── svg2rgba_bg.wasm
+│   ├── svg2stln_bg.wasm
+│   └── stln2rgba_bg.wasm
 ├── scripts/
 │   ├── build.ts
 │   ├── vendor.ts
@@ -60,7 +74,7 @@ svg2ui8a/
 └── vendor/                    # gitignored except in release snapshots
 ```
 
-The two Wasm crates are independent artifacts, but they share the non-Wasm
+The three Wasm crates are independent artifacts, but they share the non-Wasm
 `intermediate` crate. It is the single source of truth for the versioned DTO,
 canonical-CBOR envelope, validation, and conversion to and from the supported
 `usvg::Tree` subset.
@@ -74,11 +88,14 @@ binary, manage their own `init()` flag, and export their own function.
 
 The package exposes the following subpaths:
 
-| Subpath               | What it loads                         | Wasm size |
-| --------------------- | ------------------------------------- | --------- |
-| `@tksh/svg2ui8a`      | Re-exports both `./usvg` and `./rgba` | (sum)     |
-| `@tksh/svg2ui8a/usvg` | `svg2usvg` only                       | Small     |
-| `@tksh/svg2ui8a/rgba` | `usvg2rgba` only                      | Larger    |
+| Subpath                      | What it loads                                   | Wasm size |
+| ---------------------------- | ----------------------------------------------- | --------- |
+| Subpath                      | What it loads                                   | Wasm size |
+| ---------------------------- | ----------------------------------------------- | --------- |
+| `@tksh/svg2ui8a`             | Re-exports all three leaf subpaths              | (sum)     |
+| `@tksh/svg2ui8a/svg2rgba`    | One-shot general-purpose render                 | Medium    |
+| `@tksh/svg2ui8a/svg2stln`    | Straightlines producer only                     | Small     |
+| `@tksh/svg2ui8a/stln2rgba`   | Straightlines rasterizer only                   | Larger    |
 
 **Subpath imports are the supported way to load a single Wasm artifact.** The
 root import is a convenience for consumers who want both; it does not enable any
@@ -92,8 +109,9 @@ tree-shaking that the subpath imports would not already enable.
   "version": "0.1.0",
   "exports": {
     ".": "./src/mod.ts",
-    "./usvg": "./src/usvg.ts",
-    "./rgba": "./src/rgba.ts"
+    "./svg2rgba": "./src/svg2rgba.ts",
+    "./svg2stln": "./src/stln.ts",
+    "./stln2rgba": "./src/stln-rgba.ts"
   }
 }
 ```
@@ -105,7 +123,7 @@ tree-shaking that the subpath imports would not already enable.
   "tasks": {
     "build": "deno run -A scripts/build.ts",
     "test": "deno task test:rust && deno task test:wasm && deno test -A",
-    "test:rust": "cd crates/svg2usvg && cargo test && cd ../usvg2rgba && cargo test",
+    "test:rust": "cd crates/intermediate && cargo test && cd ../svg2stln && cargo test && cd ../stln2rgba && cargo test && cd ../svg2rgba && cargo test",
     "test:wasm": "deno run -A scripts/test-wasm.ts",
     "fmt": "cargo fmt && deno fmt",
     "lint": "deno lint",
@@ -118,26 +136,29 @@ tree-shaking that the subpath imports would not already enable.
 
 ```ts
 // Cache key only — load the usvg Wasm, do not load the rasterizer
-import { svg2usvg } from "jsr:@tksh/svg2ui8a/usvg";
+import { svg2rgba } from "jsr:@tksh/svg2ui8a/svg2rgba";
 
-// Already have a cached usvg payload — load the rgba Wasm,
-// do not load the SVG parser
-import { usvg2rgba } from "jsr:@tksh/svg2ui8a/rgba";
+// Already have a cached Straightlines payload — load the rasterizer,
+// do not run the SVG parser or the general-purpose renderer
+import { stln2rgba } from "jsr:@tksh/svg2ui8a/stln2rgba";
 
 // Both — load both Wasm artifacts
-import { svg2usvg, usvg2rgba } from "jsr:@tksh/svg2ui8a";
+import { svg2stln } from "jsr:@tksh/svg2ui8a/svg2stln";
+import { stln2rgba, svg2rgba } from "jsr:@tksh/svg2ui8a";
 ```
 
 ---
 
-## 3. The two Wasm builds
+## 3. The three Wasm builds
 
-Both Wasm crates depend on `intermediate`, which uses `usvg` 0.47.0 and
-`cbor-core` 0.10.1. `usvg2rgba` additionally uses `resvg` 0.47.0. `usvg` and
-`resvg` disable default features, so neither text/system-font support nor
-raster-image decoding is compiled into either artifact.
+The Straightlines pair (`svg2stln`, `stln2rgba`) both depend on `intermediate`,
+which uses `usvg` 0.47.0 and `cbor-core` 0.10.1; `stln2rgba` additionally uses
+`resvg` 0.47.0. The one-shot `svg2rgba` depends on `resvg` (and its `usvg`
+re-export) only — no `intermediate`, no CBOR. All crates use default-features-
+disabled upstreams, so text/system-font support and raster-image decoding are
+compiled into none of them.
 
-### 3.1 `svg2usvg` (the producer)
+### 3.1 `svg2stln` (the Straightlines producer)
 
 The work is:
 
@@ -157,7 +178,7 @@ The work does **not** include:
 The implementation plan must explain why each required dependency is needed and
 what role it plays in the boundary.
 
-### 3.2 `usvg2rgba` (the consumer)
+### 3.2 `stln2rgba` (the Straightlines consumer)
 
 The work is:
 
@@ -175,7 +196,20 @@ The work does **not** include:
 - PNG / WebP / image-format encoding (the package's contract is RGBA; the
   consumer encodes).
 
-### 3.3 Why two builds
+### 3.3 `svg2rgba` (the general-purpose one-shot)
+
+The work is:
+
+1. Reject `<text>` / `<image>` content (not compiled in — an omitted payload
+   would be unrenderable).
+2. Parse the SVG with feature-disabled `usvg`.
+3. Rasterize directly with feature-disabled `resvg` into a `tiny_skia::Pixmap`.
+4. Apply the same sizing rule and alpha-mode handling as `stln2rgba`.
+
+No CBOR envelope is read or written, and the `intermediate` crate is not
+involved. Determinism is asserted as "same input → same pixels" only.
+
+### 3.4 Why three builds
 
 The `usvg` and `rgba` builds serve different use cases with different cost
 profiles:
@@ -185,8 +219,9 @@ profiles:
 - A consumer who already has a cached intermediate payload (e.g. on a hot path
   where 99% of requests hit the cache) should never pay for the SVG parser.
 
-A single Wasm with both functions would force every consumer to load both code
-paths. That violates `docs/project-constitution.md` §3.9.
+Merging any of them into a single Wasm would force every consumer to load code
+they do not use. That violates `docs/project-constitution.md` §3.9 (as amended:
+one independent artifact per capability).
 
 ### 3.4 Workspace pin
 
@@ -197,7 +232,10 @@ version.
 ```toml
 # Cargo.toml (workspace root)
 [workspace]
-members = ["crates/intermediate", "crates/svg2usvg", "crates/usvg2rgba"]
+members = [
+  "crates/intermediate", "crates/svg2rgba", "crates/svg2stln",
+  "crates/stln2rgba",
+]
 resolver = "2"
 
 [workspace.dependencies]
@@ -223,7 +261,7 @@ The constraints on the choice are:
 - The representation must be **deterministic for a given SVG input** (modulo the
   version prefix in `docs/project-constitution.md` §6), so the bytes can be
   hashed.
-- The representation must be **readable by `usvg2rgba`** through the shared
+- The representation must be **readable by `stln2rgba`** through the shared
   `intermediate` crate; schema code is never duplicated between Wasm crates.
 - The representation must **not include fonts, raster images, BBoxes, animation
   state, or external resources**.
@@ -246,28 +284,28 @@ ecosystem crates, they stop and escalate per `./AGENTS.md` §10. The constitutio
 
 ## 5. The TypeScript surfaces
 
-### 5.1 `src/usvg.ts`
+### 5.1 `src/stln.ts`
 
 A thin Deno/Wasm wrapper that:
 
 - Imports the Wasm binary (the exact import path is decided during impl; see
   `./docs/engineering-playbook.md` §2 for the build pipeline).
 - Exposes a single async function
-  `svg2usvg(svg: string):
+  `svg2stln(svg: string):
   Promise<Uint8Array>`.
 - Manages an `initialized` flag for `init()`.
 
 The file is template-shaped by `scripts/build.ts`; the agent regenerates it,
 never hand-edits it.
 
-### 5.2 `src/rgba.ts`
+### 5.2 `src/stln-rgba.ts`
 
 A thin Deno/Wasm wrapper that:
 
 - Imports the Wasm binary.
 - Exposes a single async function
-  `usvg2rgba(usvg: Uint8Array,
-  options?: Usvg2RgbaOptions): Promise<RgbaResult>`.
+  `stln2rgba(stln: Uint8Array,
+  options?: Stln2RgbaOptions): Promise<RgbaResult>`.
   The exact shape of the options and the result is fixed by
   `docs/project-constitution.md` §4.2; the implementer chooses the inner type
   names and field names.
@@ -279,36 +317,35 @@ never hand-edits it.
 ### 5.3 `src/mod.ts`
 
 A hand-written re-export module that surfaces the two functions (and the two
-types that `usvg2rgba` needs in its public surface) from the root subpath. The
+types that `stln2rgba` needs in its public surface) from the root subpath. The
 contents of this file are:
 
 ```ts
-export { svg2usvg } from "./usvg.ts";
-export {
-  usvg2rgba,
-  // types are listed by name here; the implementer chooses
-  // the names per constitution §4.2
-} from "./rgba.ts";
+export { svg2rgba } from "./svg2rgba.ts";
+export type { RgbaResult, Svg2RgbaOptions } from "./svg2rgba.ts";
+export { svg2stln } from "./stln.ts";
+export { stln2rgba } from "./stln-rgba.ts";
+export type { RgbaResult, Stln2RgbaOptions } from "./stln-rgba.ts";
 ```
 
 ---
 
 ## 6. Data flow
 
-### 6.1 Producer (`svg2usvg`)
+### 6.1 Producer (`svg2stln`)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Consumer code (Deno / browser)                                   │
 │                                                                  │
-│   import { svg2usvg } from "jsr:@tksh/svg2ui8a/usvg";           │
+│   import { svg2rgba } from "jsr:@tksh/svg2ui8a/svg2rgba";           │
 │                                                                  │
-│   const bytes = await svg2usvg(svgString);                       │
+│   const bytes = await svg2stln(svgString);                       │
 └──────────────────────────────┬───────────────────────────────────┘
                                │ "svg string" (UTF-8)
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Wasm boundary (svg2usvg_bg.wasm)                                │
+│ Wasm boundary (svg2stln_bg.wasm)                                │
 │                                                                  │
 │   1. Parse the SVG with feature-disabled usvg                     │
 │      - reject text and image content                              │
@@ -328,22 +365,22 @@ export {
 │   - hash(bytes) → cache key                                      │
 │   - cache.set(key, bytes)                                        │
 │   - write/read a .cbor file, then pass the same bytes to         │
-│     usvg2rgba                                                     │
+│     stln2rgba                                                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 The Wasm boundary is crossed **once**. No intermediate JS object, no JSON, no
 SVG string, no pixel buffer.
 
-### 6.2 Consumer (`usvg2rgba`)
+### 6.2 Consumer (`stln2rgba`)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Consumer code                                                    │
 │                                                                  │
-│   import { usvg2rgba } from "jsr:@tksh/svg2ui8a/rgba";          │
+│   import { stln2rgba } from "jsr:@tksh/svg2ui8a/stln2rgba";     │
 │                                                                  │
-│   const { pixels, width, height } = await usvg2rgba(            │
+│   const { pixels, width, height } = await stln2rgba(            │
 │     usvgBytes,                                                   │
 │     { /* width, height, alphaMode — impl-chosen shape */ },      │
 │   );                                                             │
@@ -351,7 +388,7 @@ SVG string, no pixel buffer.
                                │ Uint8Array (CBOR bytes)
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Wasm boundary (usvg2rgba_bg.wasm)                                │
+│ Wasm boundary (stln2rgba_bg.wasm)                                │
 │                                                                  │
 │   1. wasm-bindgen: Uint8Array → &[u8] (no copy)                 │
 │                                                                  │
@@ -392,7 +429,7 @@ functions; the implementation chooses which ones to use.
 ```
 SVG string
    │
-   ▼  [svg2usvg Wasm]
+   ▼  [svg2stln Wasm]
 CBOR bytes (Uint8Array)
    │
    ▼  [hash + cache lookup]
@@ -401,7 +438,7 @@ CBOR bytes (Uint8Array)
    │
    └─ MISS
         │
-        ▼  [usvg2rgba Wasm]
+        ▼  [stln2rgba Wasm]
        RGBA bytes (Uint8Array)
         │
         ▼  [consumer's encoder]
@@ -443,16 +480,16 @@ loadable. A consumer that hits the cache 99% of the time will only ever load the
 
 ## 8. Failure modes
 
-### 8.1 Malformed SVG (in `svg2usvg`)
+### 8.1 Malformed SVG (in `svg2stln`)
 
-The parser returns an error. `svg2usvg` rejects the returned promise. The agent
+The parser returns an error. `svg2stln` rejects the returned promise. The agent
 must not swallow the error.
 
-### 8.2 Invalid CBOR file bytes (in `usvg2rgba`)
+### 8.2 Invalid CBOR file bytes (in `stln2rgba`)
 
 The decoder returns an error if input is non-canonical CBOR, has a wrong format
 identifier, unsupported format version, invalid DTO shape, or unsupported DTO
-content. `usvg2rgba` rejects the returned promise. The agent must not swallow
+content. `stln2rgba` rejects the returned promise. The agent must not swallow
 the error.
 
 ### 8.3 Out-of-memory
@@ -487,24 +524,28 @@ package itself is built.
 
 ```
 @tksh/svg2ui8a (TS)
-  ├── svg2usvg_bg.wasm (Wasm)
+  ├── svg2rgba_bg.wasm (Wasm, one-shot)
+  │     ├── resvg 0.47.0   (default features disabled)
+  │     │     └── usvg 0.47.0 (re-export)
+  │     ├── tiny-skia 0.12.0 (via resvg)
+  │     └── wasm-bindgen
+  │
+  ├── svg2stln_bg.wasm (Wasm, Straightlines producer)
   │     ├── intermediate    (shared DTO and CBOR codec)
   │     ├── usvg 0.47.0     (default features disabled)
   │     ├── cbor-core 0.10.1 (workspace-pinned)
-  │     ├── wasm-bindgen
-  │     └── (impl-dependent: serde if representation mapping requires it)
+  │     └── wasm-bindgen
   │
-  └── usvg2rgba_bg.wasm (Wasm)
+  └── stln2rgba_bg.wasm (Wasm, Straightlines rasterizer)
         ├── intermediate    (shared DTO and CBOR codec)
         ├── usvg 0.47.0     (default features disabled)
         ├── cbor-core 0.10.1 (workspace-pinned, same as above)
         ├── resvg 0.47.0    (default features disabled)
         ├── tiny-skia 0.12.0 (via resvg)
-        ├── wasm-bindgen
-        └── (impl-dependent: serde, etc.)
+        └── wasm-bindgen
 ```
 
 The exact list of "impl-dependent" dependencies is decided during implementation
 and recorded in the plan. The `usvg`, `resvg`, and `cbor-core` versions and the
-disabled upstream features are workspace-pinned so the two artifacts cannot
-drift or acquire forbidden font/image support.
+disabled upstream features are workspace-pinned so no artifact can drift or
+acquire forbidden font/image support.

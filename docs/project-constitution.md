@@ -34,36 +34,38 @@ subpath.
 
 ## 2. The two products
 
-The package exposes **two** functions, in two subpath imports of one package.
-They are not in the same file. They are not in the same Wasm binary. They are
-imported separately and used separately.
+The package exposes **three** functions, in three subpath imports of one
+package. They are not in the same file. They are not in the same Wasm binary.
+They are imported separately and used separately.
 
-### 2.1 `svg2usvg` — the producer
+### 2.1 `svg2stln` — the Straightlines producer
 
 ```ts
-// Subpath:  jsr:@tksh/svg2ui8a/usvg
-// Function: svg2usvg(svg: string): Promise<Uint8Array>
+// Subpath:  jsr:@tksh/svg2ui8a/svg2stln
+// Function: svg2stln(svg: string): Promise<Uint8Array>
 ```
 
 - Input: an SVG string.
 - Output: a `Promise<Uint8Array>` of a versioned **CBOR-encoded file payload**
-  representing the supported, parsed-and-normalized SVG subset.
+  representing the supported Straightlines subset (see §2.3 and the rename-plan
+  scope freeze: two-point straight-line paths, flat layer groups, solid-color
+  paints, required root-level `shape-rendering`).
 - Purpose: produce a stable, content-addressable intermediate that can be
   hashed, cached, shipped, written as a `.cbor` file, and later passed unchanged
-  to `usvg2rgba`.
+  to `stln2rgba`.
 
 The `Uint8Array` is a self-contained file payload. Same supported SVG input →
 same bytes (modulo the format version; see §6).
 
-### 2.2 `usvg2rgba` — the consumer
+### 2.2 `stln2rgba` — the Straightlines consumer
 
 ```ts
 // Subpath:  jsr:@tksh/svg2ui8a/rgba
-// Function: usvg2rgba(usvg: Uint8Array, options?: Usvg2RgbaOptions): Promise<RgbaResult>
+// Function: stln2rgba(stln: Uint8Array, options?: Stln2RgbaOptions): Promise<RgbaResult>
 ```
 
 - Input:
-  - `usvg`: a `Uint8Array` produced by `svg2usvg`, including bytes read from its
+  - `stln`: a `Uint8Array` produced by `svg2stln`, including bytes read from its
     `.cbor` file. It must be a valid, supported version of the package's
     canonical-CBOR intermediate.
   - `options`: optional.
@@ -72,32 +74,49 @@ same bytes (modulo the format version; see §6).
 - Purpose: turn the content-addressable handle into RGBA bytes that a canvas, an
   image pipeline, or a downstream encoder (PNG, WebP, etc.) can consume.
 
-The two functions are intentionally **separate entry points**. A consumer who
-only wants to hash SVGs imports `./usvg` and never loads the rasterizer. A
-consumer who already has a cached `usvg` payload and wants pixels imports
-`./rgba` and never runs the SVG parser. A consumer who wants both imports both,
-but the two Wasm artifacts are loaded independently.
+The two Straightlines functions are intentionally **separate entry points**. A
+consumer who only wants to hash SVGs imports `./svg2stln` and never loads the
+rasterizer. A consumer who already has a cached payload and wants pixels imports
+`./stln2rgba` and never runs the SVG parser. A consumer who wants both imports
+both, but the two Wasm artifacts are loaded independently.
 
-`usvg2rgba` validates its input by **shape**, not by **provenance**. It has no
+`stln2rgba` validates its input by **shape**, not by **provenance**. It has no
 way to know, and does not care, whether a given `Uint8Array` was produced by
-`svg2usvg`, read back from a `.cbor` file that `svg2usvg` once wrote, or
+`svg2stln`, read back from a `.cbor` file that `svg2stln` once wrote, or
 assembled by an entirely different producer. Any canonical-CBOR byte string that
-satisfies the envelope and DTO rules in §2.3 is a valid `usvg2rgba` input.
-`svg2usvg` is the only producer this package ships, but it is not the only
+satisfies the envelope and DTO rules in §2.3 is a valid `stln2rgba` input.
+`svg2stln` is the only producer this package ships, but it is not the only
 producer the format allows. This is a deliberate design property, not an
 accident: it is what lets a future, independently specified format (see
 `notes/straightlines-vision.md`) emit envelope-conformant bytes directly and
-call `usvg2rgba`, skipping SVG string generation entirely, without requiring any
+call `stln2rgba`, skipping SVG string generation entirely, without requiring any
 change to this package. Building such a producer is out of scope for this
 package (§4.5) and is not this package's concern — only staying faithful to the
 envelope contract is.
+
+### 2.4 `svg2rgba` — the general-purpose one-shot
+
+```ts
+// Subpath:  jsr:@tksh/svg2ui8a/svg2rgba
+// Function: svg2rgba(svg: string, options?: Svg2RgbaOptions): Promise<RgbaResult>
+```
+
+- Input: an SVG string plus optional sizing/alpha options.
+- Output: a `Promise<RgbaResult>` of raw RGBA pixels.
+- Scope: whatever feature-disabled `usvg`/`resvg` support, minus `<text>` and
+  `<image>` content — deliberately broader than the Straightlines subset.
+  Rectangles, curves, gradients, and clips render here.
+- No CBOR envelope exists on this path. There is no intermediate payload, no
+  cacheable-bytes contract, and no hashing guarantee; determinism is asserted
+  only as "same input → same pixels". This path does not use the `intermediate`
+  crate at all.
 
 ### 2.3 What "intermediate representation" means
 
 The intermediate is a versioned package file format, not a serialized upstream
 Rust type. Its canonical-CBOR top-level map has integer keys:
 
-- `0`: the literal text identifier `"svg2ui8a/usvg"`.
+- `0`: the literal text identifier `"svg2ui8a/straightlines"`.
 - `1`: the unsigned format version; the initial version is `1`.
 - `2`: the version-specific package DTO payload.
 
@@ -105,9 +124,9 @@ The DTO's individual drawing fields are implementation-defined, within these
 constraints:
 
 - Be encoded as canonical **CBOR** (RFC 8949).
-- Carry enough information for `usvg2rgba` to render the same visual result that
+- Carry enough information for `stln2rgba` to render the same visual result that
   the original SVG would have produced.
-- Be the **same format** on both ends — `svg2usvg` writes it and `usvg2rgba`
+- Be the **same format** on both ends — `svg2stln` writes it and `stln2rgba`
   reads it, including when the bytes came from a `.cbor` file.
 - Be **deterministic** for a given supported SVG input, so that the bytes can be
   hashed to produce a stable cache key.
@@ -129,7 +148,7 @@ scope:
 
 - No font loading, no font directory scanning, no `defaultFontFamily`.
 - No system font enumeration.
-- `svg2usvg` rejects input containing `<text>` elements; it must not emit a
+- `svg2stln` rejects input containing `<text>` elements; it must not emit a
   payload that requires font support.
 
 ### 3.2 No BBox
@@ -141,16 +160,17 @@ more, nothing less.
 ### 3.3 No PNG / WebP / JPEG / any image format
 
 The package does not encode final image files. There is no PNG output, no WebP
-output, no JPEG output. The output of `usvg2rgba` is **raw RGBA pixels as a
-`Uint8Array`**, and nothing else.
+output, no JPEG output. The outputs of `stln2rgba` and `svg2rgba` are **raw RGBA
+pixels as a `Uint8Array`**, and nothing else.
 
 This implies:
 
 - No `png` crate, no `image` crate, no `@jsquash/webp`, no `cwebp`-style tooling
   in the Wasm builds.
 - No PNG decoder on the JS side, ever.
-- No raster-image decoding or rendering in either Wasm artifact. `svg2usvg`
-  rejects SVG `<image>` content rather than emitting an unrenderable payload.
+- No raster-image decoding or rendering in any Wasm artifact. `svg2stln` and
+  `svg2rgba` rejects SVG `<image>` content rather than emitting an unrenderable
+  payload.
 
 If a consumer needs PNG output, they pipe the RGBA bytes through their own
 encoder. That encoder is the consumer's concern, not ours.
@@ -203,13 +223,15 @@ The browser bundle must contain every byte it needs to run. See `./AGENTS.md`
 §5.2 for the full rule. The package's browser bundle must not import from
 `https://deno.land/x/...`, `https://esm.sh/...`, or any other runtime CDN.
 
-### 3.9 Two Wasm artifacts, not one
+### 3.9 Independent Wasm artifacts per capability, not one
 
-The `usvg` and `rgba` builds are **two independent Wasm binaries** served under
-two independent subpath imports. They are not bundled. They are not
-feature-gated within a single Wasm artifact. The agent must not propose a
-"single Wasm with both functions" approach, even if it would be smaller in the
-abstract, because it would force every consumer to load code they do not use.
+Each independently-loadable capability is its own Wasm binary served under its
+own subpath import: `svg2rgba` (`assets/svg2rgba_bg.wasm`), `svg2stln`
+(`assets/svg2stln_bg.wasm`), and `stln2rgba` (`assets/stln2rgba_bg.wasm`). They
+are not bundled together. They are not feature-gated within a single Wasm
+artifact. The agent must not propose a "single merged Wasm" approach, even if it
+would be smaller in the abstract, because it would force every consumer to load
+code they do not use.
 
 ---
 
@@ -219,11 +241,11 @@ The API surface is **specified by shape, not by detail**. The implementer
 chooses the inner types, the inner option names, the inner error type. What is
 fixed is the _boundary_.
 
-### 4.1 `svg2usvg`
+### 4.1 `svg2stln`
 
 ```ts
-// jsr:@tksh/svg2ui8a/usvg
-export function svg2usvg(svg: string): Promise<Uint8Array>;
+// jsr:@tksh/svg2ui8a/svg2stln
+export function svg2stln(svg: string): Promise<Uint8Array>;
 ```
 
 - Input: an SVG string. No options, no second argument.
@@ -234,17 +256,17 @@ export function svg2usvg(svg: string): Promise<Uint8Array>;
   is accepted as `geometricPrecision`). Error type is whatever `wasm-bindgen`
   produces; consumers are expected to surface it.
 
-### 4.2 `usvg2rgba`
+### 4.2 `stln2rgba`
 
 ```ts
 // jsr:@tksh/svg2ui8a/rgba
 //
-// The exact shape of `Usvg2RgbaOptions` and `RgbaResult` is an
+// The exact shape of `Stln2RgbaOptions` and `RgbaResult` is an
 // implementation choice. The shape below is a *reference shape*,
 // not a contract. The implementation may add or rename fields,
 // provided the boundary in §2.2 is preserved.
 
-export interface Usvg2RgbaOptions {
+export interface Stln2RgbaOptions {
   // Optional target dimensions. See §4.3.
   width?: number;
   height?: number;
@@ -273,14 +295,22 @@ export interface RgbaResult {
   // alphaMode: "straight" | "premultiplied";
 }
 
-export function usvg2rgba(
-  usvg: Uint8Array,
-  options?: Usvg2RgbaOptions,
+export function stln2rgba(
+  stln: Uint8Array,
+  options?: Stln2RgbaOptions,
 ): Promise<RgbaResult>;
+
+// jsr:@tksh/svg2ui8a/svg2rgba — see §2.4; identical RgbaResult shape, but
+// takes the SVG string directly:
+//
+// export function svg2rgba(
+//   svg: string,
+//   options?: Svg2RgbaOptions,
+// ): Promise<RgbaResult>;
 ```
 
 - Input:
-  - `usvg`: a `Uint8Array` produced by `svg2usvg` or read from a compatible
+  - `stln`: a `Uint8Array` produced by `svg2stln` or read from a compatible
     `.cbor` file. Must be a supported, canonical-CBOR package payload.
   - `options`: optional, see above.
 - Output: a `Promise<RgbaResult>`, see above.
@@ -313,12 +343,12 @@ For both functions:
 - No `toString()` / SVG-string output anywhere. The whole point is to _avoid_
   the SVG string.
 
-For `svg2usvg` only:
+For `svg2stln` only:
 
 - No `width` / `height` / `scale` parameters. The output dimensions live in the
   intermediate.
 
-For `usvg2rgba` only:
+For `stln2rgba` and `svg2rgba` only:
 
 - No `shapeRendering` / `textRendering` / `imageRendering` knobs. Defaults from
   `resvg` are used.
@@ -331,13 +361,13 @@ The following are intentionally deferred:
   file. If added, it would be a _third_ subpath (`./png`) and a _third_ Wasm
   build.
 - WebP encoding. Same story.
-- A "convenience" wrapper that takes an SVG string and returns RGBA in one call
-  (i.e. `svg2usvg` + `usvg2rgba` chained). If added, it would be a _fourth_
-  subpath.
+- ~~A "convenience" wrapper that takes an SVG string and returns RGBA in one
+  call.~~ Now shipped as `svg2rgba` (§2.4) under the rename plan; this list
+  keeps the entry for historical context only.
 - A structured-object input (e.g. a JS object representing the vector graphic,
   instead of an SVG string) accepted by a **new function this package would
   ship**. This is a design question the human has not yet answered; see
-  `./AGENTS.md` §10. It is unrelated to §2.2's point that `usvg2rgba` already
+  `./AGENTS.md` §10. It is unrelated to §2.2's point that `stln2rgba` already
   accepts any envelope-conformant `Uint8Array` regardless of producer; that is
   an existing property of the shipped API, not a deferred one.
 
@@ -348,9 +378,9 @@ human asks for them, the human will create a separate task and a separate plan.
 
 ## 5. What the output bytes mean
 
-### 5.1 `svg2usvg` output
+### 5.1 `svg2stln` output
 
-The `Uint8Array` returned by `svg2usvg` is a **versioned, canonical-CBOR file
+The `Uint8Array` returned by `svg2stln` is a **versioned, canonical-CBOR file
 payload** of the package's intermediate representation. It is:
 
 - Self-contained and usable directly after being written to and read from a
@@ -360,9 +390,9 @@ payload** of the package's intermediate representation. It is:
   alone is not a guarantee.
 - Not a `(intermediate, options)` pair; the natural dimensions are encoded
   inside the intermediate, and a consumer that wants a different size passes
-  `width` / `height` to `usvg2rgba`, not to `svg2usvg`.
+  `width` / `height` to `stln2rgba`, not to `svg2stln`.
 
-### 5.2 `usvg2rgba` output
+### 5.2 `stln2rgba` output
 
 The `Uint8Array` returned in `RgbaResult.pixels` is:
 
