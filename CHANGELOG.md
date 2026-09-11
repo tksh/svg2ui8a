@@ -1,3 +1,10 @@
+# 0.3.1
+
+- **Documentation: add module and symbol docs to every entrypoint.** Adds the
+  JSR-required `@module` docs to `./`, `./svg2rgba`, and `./svg2usvg`, and JSDoc
+  for `svg2rgba`, `svg2usvg`, `Svg2RgbaOptions`, and `RgbaResult`. No runtime or
+  byte-output change.
+
 # 0.3.0
 
 - **Pivot: remove Straightlines / CBOR intermediate, keep `svg2rgba`, add
