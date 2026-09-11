@@ -15,11 +15,7 @@
  * future case where a JSR dependency must be pinned.
  */
 
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, "..");
+const ROOT = new URL("../", import.meta.url).pathname;
 
 const specifier = Deno.args[0];
 if (!specifier) {
@@ -38,9 +34,9 @@ if (!match) {
 }
 const [, name, version] = match;
 
-const dir = join(ROOT, "vendor", name);
+const dir = new URL(`../vendor/${name}/`, import.meta.url).pathname;
 Deno.mkdirSync(dir, { recursive: true });
-const modPath = join(dir, "mod.js");
+const modPath = new URL(`../vendor/${name}/mod.js`, import.meta.url).pathname;
 
 const bundle = new Deno.Command("deno", {
   args: ["bundle", specifier, "-o", modPath],
@@ -88,5 +84,8 @@ AGENTS.md §7: \`vendor/\` is not committed except as part of a release
 snapshot (engineering-playbook §5.1).
 `;
 
-Deno.writeTextFileSync(join(dir, "VENDORED.md"), vendoredMd);
+Deno.writeTextFileSync(
+  new URL(`../vendor/${name}/VENDORED.md`, import.meta.url).pathname,
+  vendoredMd,
+);
 console.log(`vendored ${specifier} → vendor/${name}/mod.js`);

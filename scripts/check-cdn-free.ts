@@ -15,17 +15,13 @@
  * `runCheck()` from `scripts/build.ts`.
  */
 
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, "..");
+const ROOT = new URL("../", import.meta.url).pathname;
 
 const RUNTIME_URL = /https?:\/\//;
 
 function bundle(entry: string): string {
   const res = new Deno.Command("deno", {
-    args: ["bundle", join(ROOT, entry)],
+    args: ["bundle", new URL(entry, new URL("../", import.meta.url)).pathname],
     cwd: ROOT,
     stdout: "piped",
     stderr: "piped",

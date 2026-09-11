@@ -11,12 +11,8 @@
  * instead of stale checked-in goldens.
  */
 
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { svg2rgba, type Svg2RgbaOptions } from "../src/svg2rgba.ts";
 import { svg2usvg } from "../src/svg2usvg.ts";
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Test inputs fed identically to the TS entry point and the native core. */
 const SVGS: Array<[string, string]> = [
@@ -73,7 +69,7 @@ async function runNativeCore(
 ): Promise<{ stdout: Uint8Array; stderr: string }> {
   const command = new Deno.Command("cargo", {
     args: ["run", "--quiet", "--example", "dump_core", ...args],
-    cwd: join(ROOT, "crates", crate),
+    cwd: new URL(`../crates/${crate}/`, import.meta.url).pathname,
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",

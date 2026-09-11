@@ -14,15 +14,12 @@
  * wasm-pack 0.15.0 is the recorded toolchain version for this script.
  */
 
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { runCheck } from "./check-cdn-free.ts";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, "..");
-const ASSETS_DIR = join(ROOT, "assets");
-const SRC_DIR = join(ROOT, "src");
-const CARGO_DIR = join(ROOT, "crates");
+const resolve = (relativePath: string): string =>
+  new URL(relativePath, import.meta.url).pathname;
+const ROOT = resolve("../");
+const ASSETS_DIR = resolve("../assets/");
 
 /** Run a command from `cwd`, returning trimmed stdout; throws on failure. */
 function run(argv: string[], cwd = ROOT): string {
@@ -278,7 +275,7 @@ function verifyWasmExports(): void {
   const modules = Object.fromEntries(
     ["svg2usvg", "svg2rgba"].map((crate) => {
       const mod = new WebAssembly.Module(
-        Deno.readFileSync(join(ASSETS_DIR, `${crate}_bg.wasm`)),
+        Deno.readFileSync(resolve(`../assets/${crate}_bg.wasm`)),
       );
       return [crate, WebAssembly.Module.exports(mod).map((e) => e.name)];
     }),
@@ -311,30 +308,36 @@ function main(): void {
 
   for (const crate of ["svg2rgba", "svg2usvg"]) {
     console.log(`Building ${crate} Wasm...`);
-    run(["wasm-pack", "build", join(CARGO_DIR, crate), "--target", "web"]);
+    run([
+      "wasm-pack",
+      "build",
+      resolve(`../crates/${crate}`),
+      "--target",
+      "web",
+    ]);
     Deno.copyFileSync(
-      join(CARGO_DIR, crate, "pkg", `${crate}_bg.wasm`),
-      join(ASSETS_DIR, `${crate}_bg.wasm`),
+      resolve(`../crates/${crate}/pkg/${crate}_bg.wasm`),
+      resolve(`../assets/${crate}_bg.wasm`),
     );
     console.log(`  → copied to assets/${crate}_bg.wasm`);
   }
 
   console.log("Regenerating TypeScript wrappers...");
   Deno.writeTextFileSync(
-    join(SRC_DIR, "svg2usvg.ts"),
+    resolve("../src/svg2usvg.ts"),
     generateSvg2usvgTs(
-      Deno.readTextFileSync(join(CARGO_DIR, "svg2usvg", "pkg", "svg2usvg.js")),
-      Deno.readFileSync(join(CARGO_DIR, "svg2usvg", "pkg", "svg2usvg_bg.wasm")),
+      Deno.readTextFileSync(resolve("../crates/svg2usvg/pkg/svg2usvg.js")),
+      Deno.readFileSync(resolve("../crates/svg2usvg/pkg/svg2usvg_bg.wasm")),
     ),
   );
   Deno.writeTextFileSync(
-    join(SRC_DIR, "svg2rgba.ts"),
+    resolve("../src/svg2rgba.ts"),
     generateSvg2RgbaTs(
-      Deno.readTextFileSync(join(CARGO_DIR, "svg2rgba", "pkg", "svg2rgba.js")),
-      Deno.readFileSync(join(CARGO_DIR, "svg2rgba", "pkg", "svg2rgba_bg.wasm")),
+      Deno.readTextFileSync(resolve("../crates/svg2rgba/pkg/svg2rgba.js")),
+      Deno.readFileSync(resolve("../crates/svg2rgba/pkg/svg2rgba_bg.wasm")),
     ),
   );
-  Deno.writeTextFileSync(join(SRC_DIR, "mod.ts"), generateModTs());
+  Deno.writeTextFileSync(resolve("../src/mod.ts"), generateModTs());
   console.log(
     "  → wrote src/svg2usvg.ts, src/svg2rgba.ts, src/mod.ts",
   );

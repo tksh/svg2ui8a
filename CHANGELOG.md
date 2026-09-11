@@ -1,3 +1,8 @@
+# 0.3.2
+
+- Replace `node:` path and URL imports in development scripts with Deno-native
+  URL resolution.
+
 # 0.3.1
 
 - **Documentation: add module and symbol docs to every entrypoint.** Adds the

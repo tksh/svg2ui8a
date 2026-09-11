@@ -12,12 +12,9 @@
  * Requires pinned Chrome 125.0.6400.0 via Astral (see scripts/ensure-chrome.ts).
  */
 
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { launch, SUPPORTED_VERSIONS } from "@astral/astral";
 
 const EXPECTED_CHROME = "125.0.6400.0";
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const SVGS: Array<[string, string]> = [
   [
@@ -96,7 +93,7 @@ async function runNativeCore(
 ): Promise<{ stdout: Uint8Array; stderr: string }> {
   const command = new Deno.Command("cargo", {
     args: ["run", "--quiet", "--example", "dump_core", ...args],
-    cwd: join(ROOT, "crates", crate),
+    cwd: new URL(`../crates/${crate}/`, import.meta.url).pathname,
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
