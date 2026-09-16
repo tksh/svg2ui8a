@@ -245,12 +245,16 @@ export async function svg2rgba(
   opts.height = options?.height ?? 0;
   opts.alpha_mode = options?.alphaMode ?? "straight";
   const result = __wasm_svg2rgba(svg, opts);
-  return {
-    width: result.width,
-    height: result.height,
-    alphaMode: result.alpha_mode,
-    pixels: result.pixels,
-  };
+  try {
+    return {
+      width: result.width,
+      height: result.height,
+      alphaMode: result.alpha_mode,
+      pixels: result.pixels,
+    };
+  } finally {
+    result.free();
+  }
 }
 `;
 }
