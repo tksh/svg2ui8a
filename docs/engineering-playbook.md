@@ -342,17 +342,25 @@ consumer is responsible for their own bundle hygiene.
 
 ## 6. Releasing
 
-Releases are the human's responsibility. The agent's responsibilities around
-releases are:
+Releases are initiated by the human and published by GitHub Actions. The package
+version is not stored in `deno.json`; the release tag is the single source of
+the published version.
 
-- Add an entry to `CHANGELOG.md` under the **"Unreleased"** section as part of
-  every change. Version bumps and tags are **human-driven**; see `./AGENTS.md`
-  §8 (no push / no merge without human approval).
-- Run `deno task build` and commit the regenerated artifacts before the release.
-- Tag the release commit with `v<version>` (human does this).
+The release flow is:
 
-The agent must not push tags, publish to JSR, or merge release PRs. The human
-does those.
+1. Add an entry to `CHANGELOG.md` under the **"Unreleased"** section and update
+   the release notes as appropriate.
+2. Run `deno task build` and commit the regenerated artifacts before the
+   release.
+3. Create an annotated tag named `v<version>` on the release commit.
+4. Push the tag with `git push --tags`.
+5. The `.github/workflows/publish.yml` workflow runs for `v*.*.*` tags and
+   invokes `deno publish --set-version <version>`, using the tag name without
+   the leading `v`.
+
+The human is responsible for creating and pushing the tag. The GitHub Actions
+workflow is responsible for publishing to JSR. The agent must not push tags,
+publish to JSR, or merge release PRs.
 
 ---
 

@@ -86,7 +86,6 @@ tree-shaking that the subpath imports would not already enable.
 ```json
 {
   "name": "@tksh/svg2ui8a",
-  "version": "0.3.0",
   "exports": {
     ".": "./src/mod.ts",
     "./svg2rgba": "./src/svg2rgba.ts",
