@@ -13,6 +13,10 @@ pub struct RgbaResult {
     pub width: u32,
     /// Height of the output pixmap in pixels.
     pub height: u32,
+    /// Natural SVG width before output sizing, in SVG user units.
+    pub natural_width: f32,
+    /// Natural SVG height before output sizing, in SVG user units.
+    pub natural_height: f32,
     /// Alpha mode of the pixels: "straight" or "premultiplied".
     pub alpha_mode: String,
     /// RGBA pixel data as a flat array (width * height * 4 bytes).
@@ -56,6 +60,8 @@ pub fn svg2rgba(svg: &str, options: Svg2RgbaOptions) -> Result<RgbaResult, JsVal
         Ok(result) => Ok(RgbaResult {
             width: result.width,
             height: result.height,
+            natural_width: result.natural_width,
+            natural_height: result.natural_height,
             alpha_mode: result.alpha_mode,
             pixels: result.pixels,
         }),

@@ -90,6 +90,8 @@ export function svg2rgba(
 export interface RgbaResult {
   width: number;
   height: number;
+  naturalWidth: number;
+  naturalHeight: number;
   alphaMode: string;
   pixels: Uint8Array; // length === width * height * 4, row-major RGBA
 }
@@ -102,6 +104,10 @@ independent scaling. Pixels are zero-initialized; the default `alphaMode` is
 `"straight"` (non-premultiplied, e.g. 50%-opaque red is `255, 0, 0, 128`).
 Passing `alphaMode: "premultiplied"` returns the `tiny-skia` as-is value
 (`128, 0, 0, 128` for the same input).
+
+`naturalWidth` and `naturalHeight` expose the fractional natural SVG dimensions
+before output sizing. `width` and `height` remain the actual integer pixel
+dimensions of `pixels`.
 
 ## Design constraints
 

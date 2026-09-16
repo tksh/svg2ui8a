@@ -32,6 +32,8 @@ impl Default for RgbaOptions {
 pub struct RgbaResult {
     pub width: u32,
     pub height: u32,
+    pub natural_width: f32,
+    pub natural_height: f32,
     pub pixels: Vec<u8>,
     pub alpha_mode: String,
 }
@@ -93,6 +95,8 @@ pub fn rasterize_svg(svg: &str, options: &RgbaOptions) -> Result<RgbaResult, Str
     Ok(RgbaResult {
         width: render_w,
         height: render_h,
+        natural_width: natural_w,
+        natural_height: natural_h,
         pixels,
         alpha_mode: options.alpha_mode.clone(),
     })

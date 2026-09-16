@@ -210,6 +210,8 @@ Required test cases (at minimum):
   includes `<svg`, re-parseable).
 - `svg2rgba` returns an `RgbaResult` whose `pixels` is a `Uint8Array` of exactly
   `width * height * 4` bytes.
+- `RgbaResult` exposes the fractional natural SVG dimensions separately from the
+  integer output pixel dimensions.
 - `RgbaResult` carries the alpha mode that the option specified (or the default
   if no option was given).
 - The `svg2usvg` bytes `TextDecoder`-decoded re-render identically via

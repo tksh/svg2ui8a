@@ -123,6 +123,11 @@ Deno.test("fractional natural dimensions use the natural aspect ratio", async ()
     heightOnly.width === 230 && heightOnly.height === 256,
     "height-only fractional dimensions must be 230x256",
   );
+  assert(
+    Math.abs(heightOnly.naturalWidth - 27.9) < 0.00001 &&
+      heightOnly.naturalHeight === 31,
+    "natural dimensions must remain fractional and unscaled",
+  );
 
   const widthOnly = await svg2rgba(FRACTIONAL_SVG, { width: 279 });
   assert(

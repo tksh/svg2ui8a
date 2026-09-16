@@ -224,6 +224,11 @@ export interface RgbaResult {
   width: number;
   height: number;
 
+  // Natural SVG dimensions before output sizing, in SVG user units. These may
+  // be fractional.
+  naturalWidth: number;
+  naturalHeight: number;
+
   // The alpha mode of the returned pixels. Must reflect the option
   // that produced them (or the default).
   // alphaMode: "straight" | "premultiplied";

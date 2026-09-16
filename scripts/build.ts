@@ -197,6 +197,10 @@ export interface RgbaResult {
   width: number;
   /** Actual output height in pixels after options were applied. */
   height: number;
+  /** Natural SVG width before output sizing, in SVG user units. */
+  naturalWidth: number;
+  /** Natural SVG height before output sizing, in SVG user units. */
+  naturalHeight: number;
   /** Alpha mode of the pixels: \`"straight"\` or \`"premultiplied"\`. */
   alphaMode: string;
   /**
@@ -249,6 +253,8 @@ export async function svg2rgba(
     return {
       width: result.width,
       height: result.height,
+      naturalWidth: result.natural_width,
+      naturalHeight: result.natural_height,
       alphaMode: result.alpha_mode,
       pixels: result.pixels,
     };

@@ -48,6 +48,10 @@ Deno.test("svg2rgba resolves to a well-formed RgbaResult", async () => {
     result.width === 10 && result.height === 10,
     `natural size must be 10x10, got ${result.width}x${result.height}`,
   );
+  assert(
+    result.naturalWidth === 10 && result.naturalHeight === 10,
+    `natural dimensions must be 10x10, got ${result.naturalWidth}x${result.naturalHeight}`,
+  );
   assert(result.alphaMode === "straight", "default alphaMode must be straight");
   assert(result.pixels instanceof Uint8Array, "pixels must be Uint8Array");
   assert(
@@ -96,6 +100,11 @@ Deno.test("svg2rgba preserves fractional natural aspect ratios", async () => {
   assert(
     natural.width === 28 && natural.height === 31,
     `fractional natural sizing must be 28x31, got ${natural.width}x${natural.height}`,
+  );
+  assert(
+    Math.abs(natural.naturalWidth - 27.9) < 0.00001 &&
+      natural.naturalHeight === 31,
+    `natural dimensions must be 27.9x31, got ${natural.naturalWidth}x${natural.naturalHeight}`,
   );
 });
 
@@ -166,21 +175,33 @@ Deno.test("svg2rgba result is a plain object, not a wasm-bindgen class instance"
   const c = cloned as {
     width: number;
     height: number;
+    naturalWidth: number;
+    naturalHeight: number;
     alphaMode: string;
     pixels: Uint8Array;
   };
   assert(
     c.width === result.width && c.height === result.height &&
+      c.naturalWidth === result.naturalWidth &&
+      c.naturalHeight === result.naturalHeight &&
       c.alphaMode === result.alphaMode,
-    "structuredClone must preserve width/height/alphaMode",
+    "structuredClone must preserve dimensions and alphaMode",
   );
   assert(c.pixels instanceof Uint8Array, "cloned pixels must be a Uint8Array");
 
-  let parsed: { width: number; height: number; alphaMode: string };
+  let parsed: {
+    width: number;
+    height: number;
+    naturalWidth: number;
+    naturalHeight: number;
+    alphaMode: string;
+  };
   try {
     parsed = JSON.parse(JSON.stringify(result)) as {
       width: number;
       height: number;
+      naturalWidth: number;
+      naturalHeight: number;
       alphaMode: string;
     };
   } catch (e) {
@@ -188,8 +209,10 @@ Deno.test("svg2rgba result is a plain object, not a wasm-bindgen class instance"
   }
   assert(
     parsed.width === result.width && parsed.height === result.height &&
+      parsed.naturalWidth === result.naturalWidth &&
+      parsed.naturalHeight === result.naturalHeight &&
       parsed.alphaMode === result.alphaMode,
-    "JSON round-trip must preserve width/height/alphaMode",
+    "JSON round-trip must preserve dimensions and alphaMode",
   );
   assert(
     !("free" in parsed),

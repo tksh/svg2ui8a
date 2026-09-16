@@ -1,3 +1,17 @@
+# 0.3.6
+
+- **Expose fractional natural SVG dimensions in `RgbaResult`.** Adds
+  `naturalWidth` and `naturalHeight` to the JavaScript result so consumers can
+  access the original SVG dimensions separately from the integer output pixel
+  dimensions.
+
+# 0.3.5
+
+- **Preserve fractional natural SVG dimensions for aspect-ratio sizing.** The
+  `svg2rgba` renderer now keeps the natural `usvg` dimensions as floating-point
+  values while calculating one-sided output sizes, then rounds only the final
+  pixel dimensions.
+
 # 0.3.4
 
 - **Free temporary Wasm `RgbaResult` immediately after copying pixels (no

@@ -23,6 +23,8 @@ fn simple_svg_renders_to_natural_size() {
     let result = rasterize_svg(RED_CANVAS_SVG, &options(0, 0, "straight")).expect("should succeed");
     assert_eq!(result.width, 10);
     assert_eq!(result.height, 10);
+    assert_eq!(result.natural_width, 10.0);
+    assert_eq!(result.natural_height, 10.0);
     assert_eq!(result.pixels.len(), 10 * 10 * 4);
 }
 
@@ -46,6 +48,7 @@ fn fractional_natural_size_is_used_for_height_only_aspect_ratio() {
     let result =
         rasterize_svg(FRACTIONAL_CANVAS_SVG, &options(0, 256, "straight")).expect("should succeed");
     assert_eq!((result.width, result.height), (230, 256));
+    assert_eq!((result.natural_width, result.natural_height), (27.9, 31.0));
 }
 
 #[test]
@@ -53,6 +56,7 @@ fn fractional_natural_size_is_used_for_width_only_aspect_ratio() {
     let result =
         rasterize_svg(FRACTIONAL_CANVAS_SVG, &options(279, 0, "straight")).expect("should succeed");
     assert_eq!((result.width, result.height), (279, 310));
+    assert_eq!((result.natural_width, result.natural_height), (27.9, 31.0));
 }
 
 #[test]
@@ -60,6 +64,7 @@ fn fractional_natural_size_is_rounded_when_dimensions_are_omitted() {
     let result =
         rasterize_svg(FRACTIONAL_CANVAS_SVG, &options(0, 0, "straight")).expect("should succeed");
     assert_eq!((result.width, result.height), (28, 31));
+    assert_eq!((result.natural_width, result.natural_height), (27.9, 31.0));
 }
 
 #[test]
