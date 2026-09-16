@@ -1,3 +1,18 @@
+# 0.3.4
+
+- **Free temporary Wasm `RgbaResult` immediately after copying pixels (no
+  API/output change).** `svg2rgba()` now calls `result.free()` in `finally`
+  after building the plain object, instead of relying on `FinalizationRegistry`
+  timing. Fixes Wasm-memory accumulation over consecutive renders.
+
+# 0.3.3
+
+- **Publishing from GitHub Actions (no runtime or byte-output change).**
+  Releases are now published by `.github/workflows/publish.yml` on `v*.*.*` tags
+  via `deno publish --set-version`; the version is no longer stored in
+  `deno.json`, and the release flow is documented in
+  `docs/engineering-playbook.md` §6.
+
 # 0.3.2
 
 - Replace `node:` path and URL imports in development scripts with Deno-native
