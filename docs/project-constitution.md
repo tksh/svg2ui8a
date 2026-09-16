@@ -247,14 +247,17 @@ export function svg2rgba(
 
 ### 4.3 Sizing
 
-If both `width` and `height` are omitted, the natural SVG size is used. If only
-one is provided, the other is taken from the natural SVG size — the output is
-exactly `width × height`, with non-uniform scaling if the aspect ratio of
-`(width, height)` does not match the natural aspect ratio. **This is a
-deliberate design choice, not a bug.** It mirrors `resvg`'s default behavior.
+If both `width` and `height` are omitted, the natural SVG size is converted to
+integer pixels by rounding each dimension to the nearest pixel. If only one is
+provided, the other is calculated from the natural SVG aspect ratio and rounded
+to the nearest pixel. If both are provided, the output is exactly
+`width × height`, with non-uniform scaling if the requested aspect ratio does
+not match the natural aspect ratio.
 
-The implementation documents the exact natural-size handling (integer, non-zero,
-etc.) in its test suite.
+Natural SVG dimensions remain fractional during aspect-ratio calculations; they
+are converted to integer pixels only when the output pixmap dimensions are
+chosen. The implementation documents the exact non-zero and rounding behavior in
+its test suite.
 
 ### 4.4 Things that are explicitly _not_ in the API
 

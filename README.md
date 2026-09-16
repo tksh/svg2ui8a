@@ -95,8 +95,9 @@ export interface RgbaResult {
 }
 ```
 
-**Sizing:** both `width` and `height` omitted → natural SVG size; one set → the
-other is taken from the natural size; both set → exact `width × height` with
+**Sizing:** both `width` and `height` omitted → natural SVG size rounded to
+integer pixels; one set → the other is calculated from the natural aspect ratio
+and rounded to an integer pixel size; both set → exact `width × height` with
 independent scaling. Pixels are zero-initialized; the default `alphaMode` is
 `"straight"` (non-premultiplied, e.g. 50%-opaque red is `255, 0, 0, 128`).
 Passing `alphaMode: "premultiplied"` returns the `tiny-skia` as-is value

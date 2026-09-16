@@ -161,8 +161,12 @@ Required test cases (at minimum):
 - A simple SVG renders to a pixmap of the expected size.
 - `width` / `height` options are honored (the output pixmap is the requested
   size, not the natural size).
-- **Only `width` set**: the output is `width × natural_h`.
-- **Only `height` set**: the output is `natural_w × height`.
+- **Only `width` set**: the output width is exact and the height is calculated
+  from the fractional natural aspect ratio, then rounded to pixels.
+- **Only `height` set**: the output height is exact and the width is calculated
+  from the fractional natural aspect ratio, then rounded to pixels.
+- **Fractional natural size**: natural dimensions remain fractional until the
+  output pixel dimensions are selected.
 - **Both set to a non-uniform aspect ratio**: the output is exactly
   `width × height` (independent scaling).
 - A zero-sized SVG produces an error.

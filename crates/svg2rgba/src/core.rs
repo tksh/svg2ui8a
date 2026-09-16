@@ -49,20 +49,26 @@ pub fn rasterize_svg(svg: &str, options: &RgbaOptions) -> Result<RgbaResult, Str
 
     let tree = usvg::Tree::from_str(svg, &usvg::Options::default()).map_err(|e| e.to_string())?;
 
-    let natural_w = tree.size().width() as u32;
-    let natural_h = tree.size().height() as u32;
-    if natural_w == 0 || natural_h == 0 {
+    let natural_w = tree.size().width();
+    let natural_h = tree.size().height();
+    if natural_w <= 0.0 || natural_h <= 0.0 {
         return Err("svg2rgba error: zero natural size".to_string());
     }
 
-    // Sizing rule (constitution §4.3): both omitted → natural; one set →
-    // the other comes from the natural size; both set → exact scaling.
+    // Sizing rule (constitution §4.3): natural dimensions are rounded only
+    // when choosing output pixels; one set preserves the natural aspect ratio.
     let (render_w, render_h) = if options.width == 0 && options.height == 0 {
-        (natural_w, natural_h)
+        (natural_w.round() as u32, natural_h.round() as u32)
     } else if options.width == 0 {
-        (natural_w, options.height)
+        (
+            (natural_w * options.height as f32 / natural_h).round() as u32,
+            options.height,
+        )
     } else if options.height == 0 {
-        (options.width, natural_h)
+        (
+            options.width,
+            (natural_h * options.width as f32 / natural_w).round() as u32,
+        )
     } else {
         (options.width, options.height)
     };
@@ -71,8 +77,8 @@ pub fn rasterize_svg(svg: &str, options: &RgbaOptions) -> Result<RgbaResult, Str
         return Err("svg2rgba error: zero requested size".to_string());
     }
 
-    let scale_x = render_w as f32 / natural_w as f32;
-    let scale_y = render_h as f32 / natural_h as f32;
+    let scale_x = render_w as f32 / natural_w;
+    let scale_y = render_h as f32 / natural_h;
 
     let mut pixmap = Pixmap::new(render_w, render_h)
         .ok_or_else(|| "svg2rgba error: pixmap allocation failed".to_string())?;

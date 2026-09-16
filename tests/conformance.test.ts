@@ -8,6 +8,9 @@ const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
   <path d="M 5 0 L 5 10" stroke="#ff0000" stroke-width="10" fill="none"/>
 </svg>`;
 
+const FRACTIONAL_SVG =
+  `<svg xmlns="http://www.w3.org/2000/svg" width="27.9" height="31"><rect width="27.9" height="31" fill="#ff0000"/></svg>`;
+
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) {
     throw new Error(msg);
@@ -95,8 +98,8 @@ Deno.test("end-to-end svg2rgba sizing rules", async () => {
   > = [
     [undefined, 10, 10],
     [{}, 10, 10],
-    [{ width: 40 }, 40, 10],
-    [{ height: 30 }, 10, 30],
+    [{ width: 40 }, 40, 40],
+    [{ height: 30 }, 30, 30],
     [{ width: 40, height: 30 }, 40, 30],
   ];
   for (const [options, w, h] of cases) {
@@ -112,6 +115,20 @@ Deno.test("end-to-end svg2rgba sizing rules", async () => {
       `pixels.length must equal width*height*4 (${w}*${h}*4), got ${result.pixels.length}`,
     );
   }
+});
+
+Deno.test("fractional natural dimensions use the natural aspect ratio", async () => {
+  const heightOnly = await svg2rgba(FRACTIONAL_SVG, { height: 256 });
+  assert(
+    heightOnly.width === 230 && heightOnly.height === 256,
+    "height-only fractional dimensions must be 230x256",
+  );
+
+  const widthOnly = await svg2rgba(FRACTIONAL_SVG, { width: 279 });
+  assert(
+    widthOnly.width === 279 && widthOnly.height === 310,
+    "width-only fractional dimensions must be 279x310",
+  );
 });
 
 Deno.test("init is idempotent and the two Wasm modules do not cross-interfere", async () => {

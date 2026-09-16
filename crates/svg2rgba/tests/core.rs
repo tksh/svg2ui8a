@@ -16,6 +16,7 @@ fn options(width: u32, height: u32, alpha_mode: &str) -> RgbaOptions {
 /// A full-canvas red stroke (a 10-wide vertical stroke centered on x=5 covers
 /// the whole 10×10 canvas) — used for uniform-color assertions.
 const RED_CANVAS_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path d="M 5 0 L 5 10" stroke="#ff0000" stroke-width="10" fill="none"/></svg>"##;
+const FRACTIONAL_CANVAS_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="27.9" height="31"><rect width="27.9" height="31" fill="#ff0000"/></svg>"##;
 
 #[test]
 fn simple_svg_renders_to_natural_size() {
@@ -29,15 +30,36 @@ fn simple_svg_renders_to_natural_size() {
 fn width_only_uses_natural_height() {
     let result =
         rasterize_svg(RED_CANVAS_SVG, &options(100, 0, "straight")).expect("should succeed");
-    assert_eq!((result.width, result.height), (100, 10));
-    assert_eq!(result.pixels.len(), 100 * 10 * 4);
+    assert_eq!((result.width, result.height), (100, 100));
+    assert_eq!(result.pixels.len(), 100 * 100 * 4);
 }
 
 #[test]
 fn height_only_uses_natural_width() {
     let result =
         rasterize_svg(RED_CANVAS_SVG, &options(0, 30, "straight")).expect("should succeed");
-    assert_eq!((result.width, result.height), (10, 30));
+    assert_eq!((result.width, result.height), (30, 30));
+}
+
+#[test]
+fn fractional_natural_size_is_used_for_height_only_aspect_ratio() {
+    let result =
+        rasterize_svg(FRACTIONAL_CANVAS_SVG, &options(0, 256, "straight")).expect("should succeed");
+    assert_eq!((result.width, result.height), (230, 256));
+}
+
+#[test]
+fn fractional_natural_size_is_used_for_width_only_aspect_ratio() {
+    let result =
+        rasterize_svg(FRACTIONAL_CANVAS_SVG, &options(279, 0, "straight")).expect("should succeed");
+    assert_eq!((result.width, result.height), (279, 310));
+}
+
+#[test]
+fn fractional_natural_size_is_rounded_when_dimensions_are_omitted() {
+    let result =
+        rasterize_svg(FRACTIONAL_CANVAS_SVG, &options(0, 0, "straight")).expect("should succeed");
+    assert_eq!((result.width, result.height), (28, 31));
 }
 
 #[test]

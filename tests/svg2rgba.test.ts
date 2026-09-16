@@ -11,6 +11,9 @@ const LINE_SVG =
   <path d="M 5 0 L 5 10" stroke="#ff0000" stroke-width="10" fill="none"/>
 </svg>`;
 
+const FRACTIONAL_CANVAS_SVG =
+  `<svg xmlns="http://www.w3.org/2000/svg" width="27.9" height="31"><rect width="27.9" height="31" fill="#ff0000"/></svg>`;
+
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) {
     throw new Error(msg);
@@ -57,8 +60,8 @@ Deno.test("svg2rgba honors sizing rules and alphaMode", async () => {
   const cases: Array<[Svg2RgbaOptions | undefined, number, number]> = [
     [undefined, 10, 10],
     [{}, 10, 10],
-    [{ width: 40 }, 40, 10],
-    [{ height: 30 }, 10, 30],
+    [{ width: 40 }, 40, 40],
+    [{ height: 30 }, 30, 30],
     [{ width: 40, height: 30 }, 40, 30],
   ];
   for (const [options, w, h] of cases) {
@@ -74,6 +77,26 @@ Deno.test("svg2rgba honors sizing rules and alphaMode", async () => {
     alphaMode: "premultiplied",
   });
   assert(premultiplied.alphaMode === "premultiplied", "alphaMode reflected");
+});
+
+Deno.test("svg2rgba preserves fractional natural aspect ratios", async () => {
+  const heightOnly = await svg2rgba(FRACTIONAL_CANVAS_SVG, { height: 256 });
+  assert(
+    heightOnly.width === 230 && heightOnly.height === 256,
+    `height-only fractional sizing must be 230x256, got ${heightOnly.width}x${heightOnly.height}`,
+  );
+
+  const widthOnly = await svg2rgba(FRACTIONAL_CANVAS_SVG, { width: 279 });
+  assert(
+    widthOnly.width === 279 && widthOnly.height === 310,
+    `width-only fractional sizing must be 279x310, got ${widthOnly.width}x${widthOnly.height}`,
+  );
+
+  const natural = await svg2rgba(FRACTIONAL_CANVAS_SVG);
+  assert(
+    natural.width === 28 && natural.height === 31,
+    `fractional natural sizing must be 28x31, got ${natural.width}x${natural.height}`,
+  );
 });
 
 Deno.test("svg2rgba renders general-purpose SVG (rects, curves, gradients)", async () => {
@@ -220,8 +243,8 @@ Deno.test("Svg2RgbaOptions accepts a plain object literal, not a wasm class inst
   const partial = await svg2rgba(LINE_SVG, { width: 100 });
   assert(partial.width === 100, "width-only option must be honored");
   assert(
-    partial.height === 10,
-    "unset height must fall back to the natural SVG height",
+    partial.height === 100,
+    "unset height must preserve the natural SVG aspect ratio",
   );
   assert(
     partial.alphaMode === "straight",
