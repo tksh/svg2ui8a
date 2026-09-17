@@ -103,7 +103,8 @@ requires an approved plan — do not add it outside a plan.
 ### 3.2 BBox — postponed
 
 The package does not expose bounding boxes. There is no `getBBox()`, no
-`innerBBox()`, no `cropByBBox()`.
+`innerBBox()`, no `cropByBBox()`. Functions such as `getBBox()` originate from
+`resvg-js`, not from upstream `linebender/resvg`.
 
 BBox support is **postponed**, not permanently forbidden. If needed, it will be
 added via `resvg`/`usvg` facilities under an approved plan.
