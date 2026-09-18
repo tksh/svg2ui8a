@@ -62,6 +62,31 @@ function assertBytesEqual(a: Uint8Array, b: Uint8Array, label: string): void {
   }
 }
 
+/**
+ * Bounding boxes cross a text boundary on the native side (`dump_core`
+ * prints f32 with `{}`), while the Wasm side carries exact f32 bits, so
+ * compare component-wise with a small tolerance instead of byte-exactly.
+ */
+function assertRectApproxEqual(a: unknown, b: unknown, label: string): void {
+  if (a === null || b === null) {
+    assert(a === b, `${label}: null mismatch ${a} != ${b}`);
+    return;
+  }
+  for (const field of ["x", "y", "width", "height"]) {
+    const av = (a as Record<string, unknown>)[field];
+    const bv = (b as Record<string, unknown>)[field];
+    assert(
+      typeof av === "number" && typeof bv === "number",
+      `${label}: ${field} must be numbers`,
+    );
+    const tol = 1e-6 * Math.max(1, Math.abs(av), Math.abs(bv));
+    assert(
+      Math.abs(av - bv) <= tol,
+      `${label}: ${field} mismatch ${av} != ${bv}`,
+    );
+  }
+}
+
 async function runNativeCore(
   crate: string,
   args: string[],
@@ -133,13 +158,39 @@ async function checkSvg2rgba(
     String(options.height ?? 0),
     options.alphaMode ?? "straight",
   ], encoder.encode(svgStr));
-  const [nativeW, nativeH, nativeMode] = native.stderr.trim().split(" ");
+  const [metaLine, absLine, strokeLine, layerLine] = native.stderr.trim().split(
+    "\n",
+  );
+  const [nativeW, nativeH, nativeMode] = metaLine.trim().split(" ");
   assert(
     result.width === Number(nativeW) && result.height === Number(nativeH),
     `${label}: dimensions differ from native core`,
   );
   assert(result.alphaMode === nativeMode, `${label}: alphaMode differs`);
   assertBytesEqual(result.pixels, native.stdout, `${label}: pixels`);
+  const nativeRects = [absLine, strokeLine, layerLine].map((line) =>
+    line.trim() === "null" ? null : (() => {
+      const [x, y, width, height] = line.trim().split(" ").map(Number);
+      return { x, y, width, height };
+    })()
+  );
+  const wasmRects = [
+    result.absBoundingBox,
+    result.absStrokeBoundingBox,
+    result.absLayerBoundingBox,
+  ];
+  const names = [
+    "absBoundingBox",
+    "absStrokeBoundingBox",
+    "absLayerBoundingBox",
+  ];
+  for (let i = 0; i < 3; i++) {
+    assertRectApproxEqual(
+      wasmRects[i],
+      nativeRects[i],
+      `${label}: ${names[i]}`,
+    );
+  }
 }
 
 async function main(): Promise<void> {

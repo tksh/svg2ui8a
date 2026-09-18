@@ -94,6 +94,17 @@ export interface RgbaResult {
   naturalHeight: number;
   alphaMode: string;
   pixels: Uint8Array; // length === width * height * 4, row-major RGBA
+  absBoundingBox: RectF | null; // usvg root abs_bounding_box()
+  absStrokeBoundingBox: RectF | null; // usvg root abs_stroke_bounding_box()
+  absLayerBoundingBox: RectF | null; // usvg root abs_layer_bounding_box()
+}
+
+/** Same four numbers as `usvg::Rect` / `usvg::NonZeroRect`. */
+export interface RectF {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 ```
 
@@ -109,6 +120,19 @@ Passing `alphaMode: "premultiplied"` returns the `tiny-skia` as-is value
 before output sizing. `width` and `height` remain the actual integer pixel
 dimensions of `pixels`.
 
+`absBoundingBox`, `absStrokeBoundingBox`, and `absLayerBoundingBox` are the
+upstream `usvg` measurements of the parsed document root
+(`usvg::Group::{abs_bounding_box, abs_stroke_bounding_box,
+abs_layer_bounding_box}`),
+in canvas coordinates. They are always present on every successful result
+(`null` only when a measurement is unavailable) and are unaffected by
+sizing/alpha options:
+
+```ts
+const { absStrokeBoundingBox } = await svg2rgba(svg);
+console.log(absStrokeBoundingBox); // { x: 0, y: 0, width: 10, height: 10 }
+```
+
 ## Design constraints
 
 This package deliberately does not:
@@ -119,7 +143,8 @@ This package deliberately does not:
 - Decode or render raster images — `<image>` is rejected.
 - Encode PNG, WebP, JPEG, or any image file — output is raw `RgbaResult.pixels`
   only; consumers encode with their own library.
-- Expose bounding boxes (postponed, see §3.2).
+- Provide per-element lookup or cropping — only the parsed document root's
+  upstream `usvg` boxes are exposed (see `CHANGELOG.md` `0.4.0`).
 
 These exclusions keep the Wasm artifacts small and independently loadable.
 

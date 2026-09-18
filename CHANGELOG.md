@@ -1,3 +1,15 @@
+# 0.4.0
+
+- **Expose upstream `usvg` root bounding boxes in `RgbaResult`.** Every
+  successful `svg2rgba` call now returns `absBoundingBox`,
+  `absStrokeBoundingBox`, and `absLayerBoundingBox` (`RectF | null`, always
+  present as own properties), read verbatim from
+  `usvg::Group::{abs_bounding_box, abs_stroke_bounding_box,
+  abs_layer_bounding_box}`
+  of the parsed document root. No new option, no render-path change: pixels and
+  existing metadata are unchanged. (`docs/plans/bbox-support.md`, constitution
+  §3.2.)
+
 # 0.3.6
 
 - **Expose fractional natural SVG dimensions in `RgbaResult`.** Adds

@@ -28,6 +28,14 @@ impl Default for RgbaOptions {
 
 /// Result of a rasterization: flat RGBA pixels plus the metadata a consumer
 /// needs (actual dimensions and the alpha mode of `pixels`).
+///
+/// The three bounding-box fields are verbatim upstream `usvg` measurements of
+/// the parsed document root (`tree.root()`), read on every successful render.
+/// They are pre-render measurements in canvas coordinates, unaffected by
+/// sizing/alpha options. `None` is reserved for a genuinely unavailable
+/// upstream measurement; with pinned `usvg 0.47.0` every successful call
+/// populates all three (zero-area rects and the 1×1 layer placeholder pass
+/// through verbatim).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RgbaResult {
     pub width: u32,
@@ -36,6 +44,18 @@ pub struct RgbaResult {
     pub natural_height: f32,
     pub pixels: Vec<u8>,
     pub alpha_mode: String,
+    pub abs_bounding_box: Option<UpstreamRect>,
+    pub abs_stroke_bounding_box: Option<UpstreamRect>,
+    pub abs_layer_bounding_box: Option<UpstreamRect>,
+}
+
+/// The same four numbers as `usvg::Rect` / `usvg::NonZeroRect` accessors.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UpstreamRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
 /// Parse the SVG, apply the sizing rule, render with resvg, and return RGBA.
@@ -92,6 +112,11 @@ pub fn rasterize_svg(svg: &str, options: &RgbaOptions) -> Result<RgbaResult, Str
 
     let pixels = extract_pixels(&pixmap, render_w, render_h, &options.alpha_mode);
 
+    let root = tree.root();
+    let fill = root.abs_bounding_box();
+    let stroke = root.abs_stroke_bounding_box();
+    let layer = root.abs_layer_bounding_box();
+
     Ok(RgbaResult {
         width: render_w,
         height: render_h,
@@ -99,6 +124,24 @@ pub fn rasterize_svg(svg: &str, options: &RgbaOptions) -> Result<RgbaResult, Str
         natural_height: natural_h,
         pixels,
         alpha_mode: options.alpha_mode.clone(),
+        abs_bounding_box: Some(UpstreamRect {
+            x: fill.x(),
+            y: fill.y(),
+            width: fill.width(),
+            height: fill.height(),
+        }),
+        abs_stroke_bounding_box: Some(UpstreamRect {
+            x: stroke.x(),
+            y: stroke.y(),
+            width: stroke.width(),
+            height: stroke.height(),
+        }),
+        abs_layer_bounding_box: Some(UpstreamRect {
+            x: layer.x(),
+            y: layer.y(),
+            width: layer.width(),
+            height: layer.height(),
+        }),
     })
 }
 

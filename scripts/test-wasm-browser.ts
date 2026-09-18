@@ -72,6 +72,31 @@ function assertBytesEqual(a: Uint8Array, b: Uint8Array, label: string): void {
   }
 }
 
+/**
+ * Bounding boxes cross a text boundary on the native side (`dump_core`
+ * prints f32 with `{}`), while the browser side carries exact f32 bits, so
+ * compare component-wise with a small tolerance instead of byte-exactly.
+ */
+function assertRectApproxEqual(a: unknown, b: unknown, label: string): void {
+  if (a === null || b === null) {
+    assert(a === b, `${label}: null mismatch ${a} != ${b}`);
+    return;
+  }
+  for (const field of ["x", "y", "width", "height"]) {
+    const av = (a as Record<string, unknown>)[field];
+    const bv = (b as Record<string, unknown>)[field];
+    assert(
+      typeof av === "number" && typeof bv === "number",
+      `${label}: ${field} must be numbers`,
+    );
+    const tol = 1e-6 * Math.max(1, Math.abs(av), Math.abs(bv));
+    assert(
+      Math.abs(av - bv) <= tol,
+      `${label}: ${field} mismatch ${av} != ${bv}`,
+    );
+  }
+}
+
 async function bundleTsToJs(tsPath: string): Promise<string> {
   const cmd = new Deno.Command("deno", {
     args: ["bundle", tsPath],
@@ -244,6 +269,9 @@ window.__ready = true;
                 height: number;
                 alphaMode: string;
                 pixels: Uint8Array;
+                absBoundingBox: unknown;
+                absStrokeBoundingBox: unknown;
+                absLayerBoundingBox: unknown;
               }>;
             };
             const pending = g.__svg2rgba(svgStr, o as RgbaOpts);
@@ -257,6 +285,9 @@ window.__ready = true;
               pixelsIsU8: rgba.pixels instanceof Uint8Array,
               pixelsCtor: rgba.pixels.constructor.name,
               pixelsArr: Array.from(rgba.pixels),
+              absBoundingBox: rgba.absBoundingBox,
+              absStrokeBoundingBox: rgba.absStrokeBoundingBox,
+              absLayerBoundingBox: rgba.absLayerBoundingBox,
             };
           }, { args: [svgStr, opts as unknown as RgbaOpts] });
 
@@ -278,13 +309,38 @@ window.__ready = true;
             String(opts.height ?? 0),
             opts.alphaMode ?? "straight",
           ], encoder.encode(svgStr));
-          const [oneW, oneH, oneMode] = nativeOne.stderr.trim().split(" ");
+          const [metaLine, absLine, strokeLine, layerLine] = nativeOne.stderr
+            .trim().split("\n");
+          const [oneW, oneH, oneMode] = metaLine.trim().split(" ");
           assert(
             browserOne.width === Number(oneW) &&
               browserOne.height === Number(oneH) &&
               browserOne.alphaMode === oneMode,
             `[${name}] ${optLabel}: svg2rgba metadata differs from native`,
           );
+          const nativeRects = [absLine, strokeLine, layerLine].map((line) =>
+            line.trim() === "null" ? null : (() => {
+              const [x, y, width, height] = line.trim().split(" ").map(Number);
+              return { x, y, width, height };
+            })()
+          );
+          const browserRects = [
+            (res as { absBoundingBox: unknown }).absBoundingBox,
+            (res as { absStrokeBoundingBox: unknown }).absStrokeBoundingBox,
+            (res as { absLayerBoundingBox: unknown }).absLayerBoundingBox,
+          ];
+          const names = [
+            "absBoundingBox",
+            "absStrokeBoundingBox",
+            "absLayerBoundingBox",
+          ];
+          for (let i = 0; i < 3; i++) {
+            assertRectApproxEqual(
+              browserRects[i],
+              nativeRects[i],
+              `[${name}] ${optLabel}: ${names[i]}`,
+            );
+          }
           assertBytesEqual(
             browserOne.pixels,
             nativeOne.stdout,

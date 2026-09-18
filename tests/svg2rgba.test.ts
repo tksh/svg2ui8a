@@ -300,3 +300,126 @@ Deno.test("public subpaths export nothing whose name starts with __wasm_", async
     }
   }
 });
+
+const BBOX_KEYS = [
+  "absBoundingBox",
+  "absStrokeBoundingBox",
+  "absLayerBoundingBox",
+] as const;
+
+function assertRectFOrNull(value: unknown, key: string): void {
+  assert(value !== undefined, `${key} must never be undefined`);
+  if (value === null) {
+    return;
+  }
+  const rect = value as Record<string, unknown>;
+  assert(
+    Object.getPrototypeOf(rect) === Object.prototype,
+    `${key} must be a plain RectF object`,
+  );
+  for (const field of ["x", "y", "width", "height"]) {
+    assert(
+      typeof rect[field] === "number",
+      `${key}.${field} must be a number`,
+    );
+  }
+}
+
+Deno.test("svg2rgba always returns upstream bounding boxes", async () => {
+  const optionSets: Array<Svg2RgbaOptions | undefined> = [
+    undefined,
+    {},
+    { width: 20 },
+    { height: 5 },
+    { width: 20, height: 10 },
+    { alphaMode: "premultiplied" },
+  ];
+  for (const options of optionSets) {
+    const result = await svg2rgba(LINE_SVG, options);
+    for (const key of BBOX_KEYS) {
+      assert(
+        Object.hasOwn(result, key),
+        `${key} must be an own property of RgbaResult`,
+      );
+      assertRectFOrNull(result[key], key);
+    }
+  }
+
+  // The 10-wide stroke centered on x=5 covers the whole 10x10 canvas.
+  const full = await svg2rgba(LINE_SVG);
+  assert(
+    JSON.stringify(full.absStrokeBoundingBox) ===
+      JSON.stringify({ x: 0, y: 0, width: 10, height: 10 }),
+    "stroke box must cover the full canvas",
+  );
+  assert(
+    JSON.stringify(full.absLayerBoundingBox) ===
+      JSON.stringify(full.absStrokeBoundingBox),
+    "layer box must equal the stroke box without filters",
+  );
+
+  // Boxes are pre-render measurements: independent of sizing and alpha mode.
+  const resized = await svg2rgba(LINE_SVG, {
+    width: 40,
+    height: 30,
+    alphaMode: "premultiplied",
+  });
+  for (const key of BBOX_KEYS) {
+    assert(
+      JSON.stringify(resized[key]) === JSON.stringify(full[key]),
+      `${key} must not change with sizing/alpha options`,
+    );
+  }
+
+  // Deterministic across calls.
+  const again = await svg2rgba(LINE_SVG);
+  for (const key of BBOX_KEYS) {
+    assert(
+      JSON.stringify(again[key]) === JSON.stringify(full[key]),
+      `${key} must be deterministic`,
+    );
+  }
+});
+
+Deno.test("empty document reports zero boxes and the layer placeholder", async () => {
+  const result = await svg2rgba(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>`,
+  );
+  assert(
+    JSON.stringify(result.absBoundingBox) ===
+      JSON.stringify({ x: 0, y: 0, width: 0, height: 0 }),
+    "empty abs box must be zero",
+  );
+  assert(
+    JSON.stringify(result.absStrokeBoundingBox) ===
+      JSON.stringify({ x: 0, y: 0, width: 0, height: 0 }),
+    "empty stroke box must be zero",
+  );
+  assert(
+    JSON.stringify(result.absLayerBoundingBox) ===
+      JSON.stringify({ x: 0, y: 0, width: 1, height: 1 }),
+    "empty layer box must be the upstream 0,0,1,1 placeholder",
+  );
+});
+
+Deno.test("bounding boxes survive structuredClone and JSON round-trips", async () => {
+  const result = await svg2rgba(LINE_SVG);
+  const cloned = structuredClone(result) as RgbaResult;
+  for (const key of BBOX_KEYS) {
+    assert(
+      JSON.stringify(cloned[key]) === JSON.stringify(result[key]),
+      `${key} must survive structuredClone`,
+    );
+  }
+  const parsed = JSON.parse(JSON.stringify(result)) as RgbaResult;
+  for (const key of BBOX_KEYS) {
+    assert(
+      Object.hasOwn(parsed, key),
+      `${key} must survive a JSON round-trip as an own key`,
+    );
+    assert(
+      JSON.stringify(parsed[key]) === JSON.stringify(result[key]),
+      `${key} must survive a JSON round-trip unchanged`,
+    );
+  }
+});

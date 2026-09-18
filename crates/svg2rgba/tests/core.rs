@@ -138,3 +138,124 @@ fn renderer_is_deterministic_across_calls() {
     let b = rasterize_svg(RED_CANVAS_SVG, &options(0, 0, "straight")).expect("should succeed");
     assert_eq!(a, b);
 }
+
+const TRANSFORMED_STROKED_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><g transform="translate(10 20) scale(2 3)"><rect x="1" y="2" width="4" height="5" stroke="#000000" stroke-width="2"/></g></svg>"##;
+
+#[test]
+fn bounding_boxes_are_always_populated() {
+    let result = rasterize_svg(RED_CANVAS_SVG, &options(0, 0, "straight")).expect("should succeed");
+    assert!(
+        result.abs_bounding_box.is_some(),
+        "abs box must be populated"
+    );
+    assert!(
+        result.abs_stroke_bounding_box.is_some(),
+        "stroke box must be populated"
+    );
+    assert!(
+        result.abs_layer_bounding_box.is_some(),
+        "layer box must be populated"
+    );
+    // Existing metadata and full pixel buffers are unchanged by the addition.
+    assert_eq!((result.width, result.height), (10, 10));
+    assert_eq!((result.natural_width, result.natural_height), (10.0, 10.0));
+    assert!(
+        result.pixels.chunks(4).all(|px| px == [255, 0, 0, 255]),
+        "pixels must match the pre-change baseline byte-for-byte"
+    );
+}
+
+#[test]
+fn abs_bounding_box_matches_usvg_root() {
+    let result =
+        rasterize_svg(TRANSFORMED_STROKED_SVG, &options(0, 0, "straight")).expect("should succeed");
+    let fill = result.abs_bounding_box.expect("abs box must be populated");
+    assert_eq!(
+        (fill.x, fill.y, fill.width, fill.height),
+        (12.0, 26.0, 8.0, 15.0)
+    );
+}
+
+#[test]
+fn abs_stroke_bounding_box_includes_stroke() {
+    let result =
+        rasterize_svg(TRANSFORMED_STROKED_SVG, &options(0, 0, "straight")).expect("should succeed");
+    let fill = result.abs_bounding_box.expect("abs box must be populated");
+    let stroke = result
+        .abs_stroke_bounding_box
+        .expect("stroke box must be populated");
+    assert_eq!(
+        (stroke.x, stroke.y, stroke.width, stroke.height),
+        (10.0, 23.0, 12.0, 21.0)
+    );
+    assert!(
+        stroke.width >= fill.width && stroke.height >= fill.height,
+        "stroke box must cover at least the fill box"
+    );
+}
+
+#[test]
+fn abs_layer_bounding_box_equals_stroke_box_without_filters() {
+    let result =
+        rasterize_svg(TRANSFORMED_STROKED_SVG, &options(0, 0, "straight")).expect("should succeed");
+    assert_eq!(
+        result.abs_layer_bounding_box,
+        result.abs_stroke_bounding_box
+    );
+}
+
+#[test]
+fn abs_layer_bounding_box_expands_with_filter_region() {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><defs><filter id="f" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter></defs><rect x="10" y="10" width="20" height="20" filter="url(#f)"/></svg>"##;
+    let result = rasterize_svg(svg, &options(0, 0, "straight")).expect("should succeed");
+    let stroke = result
+        .abs_stroke_bounding_box
+        .expect("stroke box must be populated");
+    let layer = result
+        .abs_layer_bounding_box
+        .expect("layer box must be populated");
+    assert_eq!(
+        (stroke.x, stroke.y, stroke.width, stroke.height),
+        (10.0, 10.0, 20.0, 20.0)
+    );
+    assert_eq!(
+        (layer.x, layer.y, layer.width, layer.height),
+        (0.0, 0.0, 40.0, 40.0)
+    );
+}
+
+#[test]
+fn empty_document_reports_zero_boxes_and_layer_placeholder() {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>"##;
+    let result = rasterize_svg(svg, &options(0, 0, "straight")).expect("should succeed");
+    let fill = result.abs_bounding_box.expect("abs box must be populated");
+    let stroke = result
+        .abs_stroke_bounding_box
+        .expect("stroke box must be populated");
+    let layer = result
+        .abs_layer_bounding_box
+        .expect("layer box must be populated");
+    assert_eq!(
+        (fill.x, fill.y, fill.width, fill.height),
+        (0.0, 0.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        (stroke.x, stroke.y, stroke.width, stroke.height),
+        (0.0, 0.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        (layer.x, layer.y, layer.width, layer.height),
+        (0.0, 0.0, 1.0, 1.0)
+    );
+}
+
+#[test]
+fn boxes_are_deterministic_across_calls() {
+    let a =
+        rasterize_svg(TRANSFORMED_STROKED_SVG, &options(0, 0, "straight")).expect("should succeed");
+    let b =
+        rasterize_svg(TRANSFORMED_STROKED_SVG, &options(0, 0, "straight")).expect("should succeed");
+    assert_eq!(a.abs_bounding_box, b.abs_bounding_box);
+    assert_eq!(a.abs_stroke_bounding_box, b.abs_stroke_bounding_box);
+    assert_eq!(a.abs_layer_bounding_box, b.abs_layer_bounding_box);
+}

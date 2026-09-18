@@ -192,6 +192,20 @@ export interface Svg2RgbaOptions {
 /**
  * The result of a {@linkcode svg2rgba} render.
  */
+export interface RectF {
+  /** X position in canvas coordinates, mirroring \`usvg::Rect::x()\`. */
+  x: number;
+  /** Y position in canvas coordinates, mirroring \`usvg::Rect::y()\`. */
+  y: number;
+  /** Box width, mirroring \`usvg::Rect::width()\`. */
+  width: number;
+  /** Box height, mirroring \`usvg::Rect::height()\`. */
+  height: number;
+}
+
+/**
+ * The result of a {@linkcode svg2rgba} render.
+ */
 export interface RgbaResult {
   /** Actual output width in pixels after options were applied. */
   width: number;
@@ -208,6 +222,23 @@ export interface RgbaResult {
    * length is \`width * height * 4\`.
    */
   pixels: Uint8Array;
+  /**
+   * Upstream \`usvg::Group::abs_bounding_box()\` of the parsed document root,
+   * in canvas coordinates. \`null\` only when the measurement is unavailable;
+   * zero-area boxes pass through verbatim.
+   */
+  absBoundingBox: RectF | null;
+  /**
+   * Upstream \`usvg::Group::abs_stroke_bounding_box()\` of the parsed document
+   * root, in canvas coordinates. \`null\` only when unavailable.
+   */
+  absStrokeBoundingBox: RectF | null;
+  /**
+   * Upstream \`usvg::Group::abs_layer_bounding_box()\` of the parsed document
+   * root, in canvas units. \`null\` only when unavailable; upstream returns
+   * \`0,0,1,1\` for empty groups.
+   */
+  absLayerBoundingBox: RectF | null;
 }
 
 ` +
@@ -249,6 +280,15 @@ export async function svg2rgba(
   opts.height = options?.height ?? 0;
   opts.alpha_mode = options?.alphaMode ?? "straight";
   const result = __wasm_svg2rgba(svg, opts);
+  const rectOrNull = (
+    x: number | undefined,
+    y: number | undefined,
+    width: number | undefined,
+    height: number | undefined,
+  ): RectF | null =>
+    x != null && y != null && width != null && height != null
+      ? { x, y, width, height }
+      : null;
   try {
     return {
       width: result.width,
@@ -257,6 +297,24 @@ export async function svg2rgba(
       naturalHeight: result.natural_height,
       alphaMode: result.alpha_mode,
       pixels: result.pixels,
+      absBoundingBox: rectOrNull(
+        result.abs_bounding_box_x,
+        result.abs_bounding_box_y,
+        result.abs_bounding_box_width,
+        result.abs_bounding_box_height,
+      ),
+      absStrokeBoundingBox: rectOrNull(
+        result.abs_stroke_bounding_box_x,
+        result.abs_stroke_bounding_box_y,
+        result.abs_stroke_bounding_box_width,
+        result.abs_stroke_bounding_box_height,
+      ),
+      absLayerBoundingBox: rectOrNull(
+        result.abs_layer_bounding_box_x,
+        result.abs_layer_bounding_box_y,
+        result.abs_layer_bounding_box_width,
+        result.abs_layer_bounding_box_height,
+      ),
     };
   } finally {
     result.free();

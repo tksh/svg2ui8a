@@ -87,6 +87,22 @@ Deno.test("svg2usvg output is re-parseable by svg2usvg and renders via svg2rgba"
     direct.pixels,
     "usvg bytes must render identically through svg2rgba",
   );
+  for (
+    const key of [
+      "absBoundingBox",
+      "absStrokeBoundingBox",
+      "absLayerBoundingBox",
+    ] as const
+  ) {
+    assert(
+      Object.hasOwn(viaUsvg, key) && Object.hasOwn(direct, key),
+      `${key} must be present on both render results`,
+    );
+    assert(
+      viaUsvg[key] !== undefined && direct[key] !== undefined,
+      `${key} must never be undefined`,
+    );
+  }
 });
 
 Deno.test("end-to-end svg2rgba sizing rules", async () => {

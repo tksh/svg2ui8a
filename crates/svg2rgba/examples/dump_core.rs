@@ -38,6 +38,16 @@ fn main() {
     });
 
     eprintln!("{} {} {}", result.width, result.height, result.alpha_mode);
+    for rect in [
+        result.abs_bounding_box,
+        result.abs_stroke_bounding_box,
+        result.abs_layer_bounding_box,
+    ] {
+        match rect {
+            Some(r) => eprintln!("{} {} {} {}", r.x, r.y, r.width, r.height),
+            None => eprintln!("null"),
+        }
+    }
 
     std::io::stdout()
         .write_all(&result.pixels)
