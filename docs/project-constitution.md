@@ -100,14 +100,17 @@ If needed in the future, text support will be added as a faithful
 will not chase every upstream release when not needed. Any such addition
 requires an approved plan — do not add it outside a plan.
 
-### 3.2 BBox — postponed
+### 3.2 BBox — supported since `0.4.0`
 
-The package does not expose bounding boxes. There is no `getBBox()`, no
-`innerBBox()`, no `cropByBBox()`. Functions such as `getBBox()` originate from
-`resvg-js`, not from upstream `linebender/resvg`.
+Every successful `svg2rgba` call exposes the upstream `usvg` bounding boxes of
+the parsed document root as always-present, nullable metadata (`absBoundingBox`,
+`absStrokeBoundingBox`, `absLayerBoundingBox`; see
+`docs/plans/bbox-support.md`). There is still no `getBBox()`, no `innerBBox()`,
+no `cropByBBox()`. Functions such as `getBBox()` originate from `resvg-js`, not
+from upstream `linebender/resvg`.
 
-BBox support is **postponed**, not permanently forbidden. If needed, it will be
-added via `resvg`/`usvg` facilities under an approved plan.
+BBox support was **postponed**, not permanently forbidden. It was added via
+`usvg` facilities under an approved plan in `0.4.0` (see `CHANGELOG.md`).
 
 ### 3.3 No PNG / WebP / JPEG / any image format
 
