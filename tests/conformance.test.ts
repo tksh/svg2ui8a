@@ -189,3 +189,20 @@ Deno.test("malformed usvg input to svg2rgba rejects", async () => {
     "malformed SVG must reject svg2rgba",
   );
 });
+
+Deno.test("render region applies to both the original SVG and its usvg bytes", async () => {
+  const usvgBytes = await svg2usvg(SVG);
+  const usvgText = new TextDecoder().decode(usvgBytes);
+  const region = { x: 0, y: 0, width: 5, height: 5 };
+  const viaUsvg = await svg2rgba(usvgText, { region });
+  const direct = await svg2rgba(SVG, { region });
+  assert(
+    viaUsvg.width === direct.width && viaUsvg.height === direct.height,
+    "region render dimensions must match across the two inputs",
+  );
+  assertBytesEqual(
+    viaUsvg.pixels,
+    direct.pixels,
+    "region render pixels must match across the original SVG and its usvg bytes",
+  );
+});

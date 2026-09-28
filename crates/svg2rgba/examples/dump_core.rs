@@ -1,26 +1,44 @@
 //! Test-support binary for the Wasm layer (engineering-playbook §3.3).
 //!
 //! Reads an SVG document from stdin, runs the Rust-native `svg2rgba` core
-//! function with `<width> <height> <alpha_mode>` arguments (0 = omitted),
-//! writes the raw pixel bytes to stdout, and `<width> <height> <alpha_mode>`
-//! of the actual result to stderr. Used by `scripts/test-wasm.ts` to compare
-//! the Wasm artifact's output against the native core output for the same
-//! input.
+//! function with `<width> <height> <alpha_mode>` arguments (0 = omitted) and an
+//! optional all-or-none region quartet `<rx> <ry> <rw> <rh>`, writes the raw
+//! pixel bytes to stdout, and `<width> <height> <alpha_mode>` of the actual
+//! result to stderr. Used by `scripts/test-wasm.ts` to compare the Wasm
+//! artifact's output against the native core output for the same input.
 
 use std::io::{Read, Write};
 
-use svg2rgba::core::{rasterize_svg, RgbaOptions};
+use svg2rgba::core::{rasterize_svg, RgbaOptions, UpstreamRect};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() != 3 {
-        eprintln!("usage: dump_core <width> <height> <straight|premultiplied>");
+    if args.len() != 3 && args.len() != 7 {
+        eprintln!(
+            "usage: dump_core <width> <height> <straight|premultiplied> [<rx> <ry> <rw> <rh>]"
+        );
         eprintln!("       width/height of 0 mean \"omitted\"");
+        eprintln!("       the optional region quartet must be all-or-none");
         std::process::exit(2);
     }
     let width: u32 = args[0].parse().expect("dump_core: width must be a u32");
     let height: u32 = args[1].parse().expect("dump_core: height must be a u32");
     let alpha_mode = args[2].clone();
+    let region = if args.len() == 7 {
+        let parse = |index: usize| -> f32 {
+            args[index]
+                .parse()
+                .expect("dump_core: region values must be f32")
+        };
+        Some(UpstreamRect {
+            x: parse(3),
+            y: parse(4),
+            width: parse(5),
+            height: parse(6),
+        })
+    } else {
+        None
+    };
 
     let mut svg = String::new();
     std::io::stdin()
@@ -31,6 +49,7 @@ fn main() {
         width,
         height,
         alpha_mode,
+        region,
     };
     let result = rasterize_svg(&svg, &options).unwrap_or_else(|e| {
         eprintln!("dump_core: rasterize_svg failed: {}", e);

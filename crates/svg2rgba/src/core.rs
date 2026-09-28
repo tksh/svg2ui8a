@@ -8,12 +8,14 @@
 use resvg::tiny_skia::{Pixmap, Transform};
 use resvg::usvg;
 
-/// Options for rasterization. `width`/`height` of 0 mean "omitted".
+/// Options for rasterization. `width`/`height` of 0 mean "omitted";
+/// `region` of `None` means "the full natural canvas".
 #[derive(Debug, Clone, PartialEq)]
 pub struct RgbaOptions {
     pub width: u32,
     pub height: u32,
     pub alpha_mode: String,
+    pub region: Option<UpstreamRect>,
 }
 
 impl Default for RgbaOptions {
@@ -22,6 +24,7 @@ impl Default for RgbaOptions {
             width: 0,
             height: 0,
             alpha_mode: "straight".to_string(),
+            region: None,
         }
     }
 }
@@ -32,7 +35,7 @@ impl Default for RgbaOptions {
 /// The three bounding-box fields are verbatim upstream `usvg` measurements of
 /// the parsed document root (`tree.root()`), read on every successful render.
 /// They are pre-render measurements in canvas coordinates, unaffected by
-/// sizing/alpha options. `None` is reserved for a genuinely unavailable
+/// sizing/alpha/region options. `None` is reserved for a genuinely unavailable
 /// upstream measurement; with pinned `usvg 0.47.0` every successful call
 /// populates all three (zero-area rects and the 1×1 layer placeholder pass
 /// through verbatim).
@@ -49,7 +52,8 @@ pub struct RgbaResult {
     pub abs_layer_bounding_box: Option<UpstreamRect>,
 }
 
-/// The same four numbers as `usvg::Rect` / `usvg::NonZeroRect` accessors.
+/// Four canvas-space numbers shared by the upstream `usvg` rects and the
+/// optional render region (both use the same `{x, y, width, height}` shape).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UpstreamRect {
     pub x: f32,
@@ -77,19 +81,38 @@ pub fn rasterize_svg(svg: &str, options: &RgbaOptions) -> Result<RgbaResult, Str
         return Err("svg2rgba error: zero natural size".to_string());
     }
 
-    // Sizing rule (constitution §4.3): natural dimensions are rounded only
-    // when choosing output pixels; one set preserves the natural aspect ratio.
+    if let Some(region) = options.region {
+        if !region.x.is_finite()
+            || !region.y.is_finite()
+            || !region.width.is_finite()
+            || !region.height.is_finite()
+            || region.width <= 0.0
+            || region.height <= 0.0
+        {
+            return Err("svg2rgba error: invalid region".to_string());
+        }
+    }
+
+    // The sizing rule measures the source window: the region when given, the
+    // natural canvas otherwise. Natural dimensions stay metadata either way.
+    let (source_w, source_h) = match options.region {
+        Some(region) => (region.width, region.height),
+        None => (natural_w, natural_h),
+    };
+
+    // Sizing rule (constitution §4.3): source dimensions are rounded only when
+    // choosing output pixels; one set preserves the source aspect ratio.
     let (render_w, render_h) = if options.width == 0 && options.height == 0 {
-        (natural_w.round() as u32, natural_h.round() as u32)
+        (source_w.round() as u32, source_h.round() as u32)
     } else if options.width == 0 {
         (
-            (natural_w * options.height as f32 / natural_h).round() as u32,
+            (source_w * options.height as f32 / source_h).round() as u32,
             options.height,
         )
     } else if options.height == 0 {
         (
             options.width,
-            (natural_h * options.width as f32 / natural_w).round() as u32,
+            (source_h * options.width as f32 / source_w).round() as u32,
         )
     } else {
         (options.width, options.height)
@@ -99,16 +122,20 @@ pub fn rasterize_svg(svg: &str, options: &RgbaOptions) -> Result<RgbaResult, Str
         return Err("svg2rgba error: zero requested size".to_string());
     }
 
-    let scale_x = render_w as f32 / natural_w;
-    let scale_y = render_h as f32 / natural_h;
+    let scale_x = render_w as f32 / source_w;
+    let scale_y = render_h as f32 / source_h;
+
+    // A region shifts the source window's origin to (0, 0) in canvas space and
+    // then scales it into the pixmap. Upstream `resvg::render_node` uses the
+    // same shift-to-origin pattern via `Transform::pre_translate`.
+    let transform = match options.region {
+        Some(region) => Transform::from_scale(scale_x, scale_y).pre_translate(-region.x, -region.y),
+        None => Transform::from_scale(scale_x, scale_y),
+    };
 
     let mut pixmap = Pixmap::new(render_w, render_h)
         .ok_or_else(|| "svg2rgba error: pixmap allocation failed".to_string())?;
-    resvg::render(
-        &tree,
-        Transform::from_scale(scale_x, scale_y),
-        &mut pixmap.as_mut(),
-    );
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
 
     let pixels = extract_pixels(&pixmap, render_w, render_h, &options.alpha_mode);
 

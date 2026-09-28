@@ -46,6 +46,19 @@ const RGBA_OPTION_SETS: Array<[string, Svg2RgbaOptions]> = [
   }],
 ];
 
+/** Region option sets: exercise the flag + four-float wasm boundary. */
+const RGBA_REGION_OPTION_SETS: Array<[string, Svg2RgbaOptions]> = [
+  ["region crop", { region: { x: 4, y: 4, width: 2, height: 2 } }],
+  [
+    "region negative origin",
+    { region: { x: -5, y: -5, width: 10, height: 10 } },
+  ],
+  [
+    "region scaled",
+    { region: { x: 0, y: 0, width: 10, height: 10 }, width: 20, height: 5 },
+  ],
+];
+
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) {
     throw new Error(msg);
@@ -153,11 +166,24 @@ async function checkSvg2rgba(
   );
 
   const encoder = new TextEncoder();
-  const native = await runNativeCore("svg2rgba", [
+  const nativeArgs = [
     String(options.width ?? 0),
     String(options.height ?? 0),
     options.alphaMode ?? "straight",
-  ], encoder.encode(svgStr));
+  ];
+  if (options.region) {
+    nativeArgs.push(
+      String(options.region.x),
+      String(options.region.y),
+      String(options.region.width),
+      String(options.region.height),
+    );
+  }
+  const native = await runNativeCore(
+    "svg2rgba",
+    nativeArgs,
+    encoder.encode(svgStr),
+  );
   const [metaLine, absLine, strokeLine, layerLine] = native.stderr.trim().split(
     "\n",
   );
@@ -206,6 +232,16 @@ async function main(): Promise<void> {
       `svg2usvg [${name}]: output must contain <svg`,
     );
     for (const [optionLabel, options] of RGBA_OPTION_SETS.slice(0, 3)) {
+      await checkSvg2rgba(
+        svgStr,
+        `[${name}] ${optionLabel}`,
+        options as Svg2RgbaOptions,
+      );
+      console.log(
+        `  ✓ svg2rgba [${name}] ${optionLabel}: Wasm output matches native core`,
+      );
+    }
+    for (const [optionLabel, options] of RGBA_REGION_OPTION_SETS) {
       await checkSvg2rgba(
         svgStr,
         `[${name}] ${optionLabel}`,

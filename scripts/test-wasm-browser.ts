@@ -35,7 +35,14 @@ const SVGS: Array<[string, string]> = [
   ],
 ];
 
-type RgbaOpts = { width?: number; height?: number; alphaMode?: string };
+type RectF = { x: number; y: number; width: number; height: number };
+
+type RgbaOpts = {
+  width?: number;
+  height?: number;
+  alphaMode?: string;
+  region?: RectF;
+};
 
 const RGBA_OPTION_SETS: Array<[string, RgbaOpts]> = [
   ["natural size", {}],
@@ -47,6 +54,19 @@ const RGBA_OPTION_SETS: Array<[string, RgbaOpts]> = [
     height: 10,
     alphaMode: "premultiplied",
   }],
+];
+
+/** Region option sets: exercise the flag + four-float wasm boundary. */
+const RGBA_REGION_OPTION_SETS: Array<[string, RgbaOpts]> = [
+  ["region crop", { region: { x: 4, y: 4, width: 2, height: 2 } }],
+  [
+    "region negative origin",
+    { region: { x: -5, y: -5, width: 10, height: 10 } },
+  ],
+  [
+    "region scaled",
+    { region: { x: 0, y: 0, width: 10, height: 10 }, width: 20, height: 5 },
+  ],
 ];
 
 if (SUPPORTED_VERSIONS.chrome !== EXPECTED_CHROME) {
@@ -242,6 +262,10 @@ window.__ready = true;
       }
 
       const encoder = new TextEncoder();
+      const optionSets: Array<[string, RgbaOpts]> = [
+        ...RGBA_OPTION_SETS.slice(0, 3),
+        ...RGBA_REGION_OPTION_SETS,
+      ];
       for (const [name, svgStr] of SVGS) {
         const browserBytes = await browserSvg2usvg(svgStr);
         const native = await runNativeCore(
@@ -258,12 +282,22 @@ window.__ready = true;
           `  ✓ svg2usvg [${name}] browser vs native (${browserBytes.length} bytes)`,
         );
 
-        for (const [optLabel, opts] of RGBA_OPTION_SETS.slice(0, 3)) {
+        for (const [optLabel, opts] of optionSets) {
           const res = await page.evaluate(async (svgStr, o) => {
             const g = globalThis as unknown as {
               __svg2rgba: (
                 s: string,
-                opts?: { width?: number; height?: number; alphaMode?: string },
+                opts?: {
+                  width?: number;
+                  height?: number;
+                  alphaMode?: string;
+                  region?: {
+                    x: number;
+                    y: number;
+                    width: number;
+                    height: number;
+                  };
+                },
               ) => Promise<{
                 width: number;
                 height: number;
@@ -304,11 +338,24 @@ window.__ready = true;
             alphaMode: (res as { alphaMode: string }).alphaMode,
             pixels: new Uint8Array((res as { pixelsArr: number[] }).pixelsArr),
           };
-          const nativeOne = await runNativeCore("svg2rgba", [
+          const nativeArgs = [
             String(opts.width ?? 0),
             String(opts.height ?? 0),
             opts.alphaMode ?? "straight",
-          ], encoder.encode(svgStr));
+          ];
+          if (opts.region) {
+            nativeArgs.push(
+              String(opts.region.x),
+              String(opts.region.y),
+              String(opts.region.width),
+              String(opts.region.height),
+            );
+          }
+          const nativeOne = await runNativeCore(
+            "svg2rgba",
+            nativeArgs,
+            encoder.encode(svgStr),
+          );
           const [metaLine, absLine, strokeLine, layerLine] = nativeOne.stderr
             .trim().split("\n");
           const [oneW, oneH, oneMode] = metaLine.trim().split(" ");

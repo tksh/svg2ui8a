@@ -80,6 +80,7 @@ export interface Svg2RgbaOptions {
   width?: number;
   height?: number;
   alphaMode?: "straight" | "premultiplied";
+  region?: RectF; // source window in canvas coords; defaults to the full canvas
 }
 export function svg2rgba(
   svg: string,
@@ -111,10 +112,11 @@ export interface RectF {
 **Sizing:** both `width` and `height` omitted → natural SVG size rounded to
 integer pixels; one set → the other is calculated from the natural aspect ratio
 and rounded to an integer pixel size; both set → exact `width × height` with
-independent scaling. Pixels are zero-initialized; the default `alphaMode` is
-`"straight"` (non-premultiplied, e.g. 50%-opaque red is `255, 0, 0, 128`).
-Passing `alphaMode: "premultiplied"` returns the `tiny-skia` as-is value
-(`128, 0, 0, 128` for the same input).
+independent scaling. With a `region`, the same rules apply to the region's
+dimensions instead of the natural ones. Pixels are zero-initialized; the default
+`alphaMode` is `"straight"` (non-premultiplied, e.g. 50%-opaque red is
+`255, 0, 0, 128`). Passing `alphaMode: "premultiplied"` returns the `tiny-skia`
+as-is value (`128, 0, 0, 128` for the same input).
 
 `naturalWidth` and `naturalHeight` expose the fractional natural SVG dimensions
 before output sizing. `width` and `height` remain the actual integer pixel
@@ -133,6 +135,22 @@ const { absStrokeBoundingBox } = await svg2rgba(svg);
 console.log(absStrokeBoundingBox); // { x: 0, y: 0, width: 10, height: 10 }
 ```
 
+`region` selects which part of the canvas is rasterized: a `RectF` in the same
+canvas coordinates as the boxes, scaled into the output pixmap. It may be
+negative and may exceed the document's viewBox, in which case content that the
+default canvas would clip is rendered. To map a box onto output pixels, use
+`scale = output / region` and offset `-region.{x,y}`. Omitting `region` renders
+the full natural canvas, byte-identically to `0.4.0`:
+
+```ts
+// Show the stroke box of an SVG that overflows its viewBox.
+const first = await svg2rgba(svg);
+if (first.absStrokeBoundingBox) {
+  const revealed = await svg2rgba(svg, { region: first.absStrokeBoundingBox });
+  console.log(revealed.width, revealed.height);
+}
+```
+
 ## Design constraints
 
 This package deliberately does not:
@@ -143,8 +161,9 @@ This package deliberately does not:
 - Decode or render raster images — `<image>` is rejected.
 - Encode PNG, WebP, JPEG, or any image file — output is raw `RgbaResult.pixels`
   only; consumers encode with their own library.
-- Provide per-element lookup or cropping — only the parsed document root's
-  upstream `usvg` boxes are exposed (see `CHANGELOG.md` `0.4.0`).
+- Provide per-element lookup — only the parsed document root's upstream `usvg`
+  boxes are exposed, plus the `region` render window (see `CHANGELOG.md` `0.4.0`
+  and `0.5.0`).
 
 These exclusions keep the Wasm artifacts small and independently loadable.
 

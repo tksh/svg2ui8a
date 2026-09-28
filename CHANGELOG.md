@@ -1,3 +1,16 @@
+# 0.5.0
+
+- **Render a region of the canvas.** `svg2rgba` gains an optional
+  `region: RectF` (canvas coordinates, the same space as the `absBoundingBox`
+  fields). It selects the source window that is scaled into the output pixmap,
+  so content outside the document's viewBox can be rendered and the bounding
+  boxes can be composed into a "show everything" call. The output sizing rule
+  applies to the region's dimensions, and `region` may be negative or larger
+  than the canvas. Omitting `region` is byte-identical to `0.4.0`;
+  `naturalWidth`/`naturalHeight` and the three boxes keep their meanings.
+  `RectF` is now also re-exported from the root subpath.
+  (`docs/plans/region-support.md`, constitution §4.5.)
+
 # 0.4.0
 
 - **Expose upstream `usvg` root bounding boxes in `RgbaResult`.** Every

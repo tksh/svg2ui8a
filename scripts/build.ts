@@ -187,10 +187,18 @@ export interface Svg2RgbaOptions {
    * \`tiny-skia\` produced them.
    */
   alphaMode?: "straight" | "premultiplied";
+  /**
+   * Source window to rasterize, in canvas coordinates (the space of
+   * \`naturalWidth\`/\`naturalHeight\` and the \`abs*BoundingBox\` fields). When
+   * omitted, the full natural canvas is rendered. The window may be negative
+   * and may exceed the canvas; it is not clipped to it.
+   */
+  region?: RectF;
 }
 
 /**
- * The result of a {@linkcode svg2rgba} render.
+ * A rectangle in canvas coordinates: the shape of the \`abs*BoundingBox\`
+ * result fields and of the \`region\` option.
  */
 export interface RectF {
   /** X position in canvas coordinates, mirroring \`usvg::Rect::x()\`. */
@@ -279,6 +287,13 @@ export async function svg2rgba(
   opts.width = options?.width ?? 0;
   opts.height = options?.height ?? 0;
   opts.alpha_mode = options?.alphaMode ?? "straight";
+  opts.region = options?.region !== undefined;
+  if (options?.region) {
+    opts.region_x = options.region.x;
+    opts.region_y = options.region.y;
+    opts.region_width = options.region.width;
+    opts.region_height = options.region.height;
+  }
   const result = __wasm_svg2rgba(svg, opts);
   const rectOrNull = (
     x: number | undefined,
@@ -334,7 +349,7 @@ function generateModTs(): string {
  * @module
  */
 export { svg2rgba } from "./svg2rgba.ts";
-export type { RgbaResult, Svg2RgbaOptions } from "./svg2rgba.ts";
+export type { RectF, RgbaResult, Svg2RgbaOptions } from "./svg2rgba.ts";
 export { svg2usvg } from "./svg2usvg.ts";
 `;
 }

@@ -14,6 +14,9 @@ const LINE_SVG =
 const FRACTIONAL_CANVAS_SVG =
   `<svg xmlns="http://www.w3.org/2000/svg" width="27.9" height="31"><rect width="27.9" height="31" fill="#ff0000"/></svg>`;
 
+const OFFSET_SQUARE_SVG =
+  `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect x="4" y="4" width="2" height="2" fill="#ff0000"/></svg>`;
+
 function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) {
     throw new Error(msg);
@@ -27,6 +30,23 @@ function checksum(bytes: Uint8Array): number {
   }
   return sum >>> 0;
 }
+
+function everyPixel(
+  pixels: Uint8Array,
+  predicate: (r: number, g: number, b: number, a: number) => boolean,
+): boolean {
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (!predicate(pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const isRed = (r: number, g: number, b: number, a: number): boolean =>
+  r === 255 && g === 0 && b === 0 && a === 255;
+const isTransparent = (r: number, g: number, b: number, a: number): boolean =>
+  r === 0 && g === 0 && b === 0 && a === 0;
 
 async function assertRejects(
   promise: Promise<unknown>,
@@ -420,6 +440,142 @@ Deno.test("bounding boxes survive structuredClone and JSON round-trips", async (
     assert(
       JSON.stringify(parsed[key]) === JSON.stringify(result[key]),
       `${key} must survive a JSON round-trip unchanged`,
+    );
+  }
+});
+
+Deno.test("svg2rgba region selects the source window", async () => {
+  const cropped = await svg2rgba(OFFSET_SQUARE_SVG, {
+    region: { x: 4, y: 4, width: 2, height: 2 },
+  });
+  assert(
+    cropped.width === 2 && cropped.height === 2,
+    `region size must drive the output size, got ${cropped.width}x${cropped.height}`,
+  );
+  assert(
+    everyPixel(cropped.pixels, isRed),
+    "the cropped region must contain only the red square",
+  );
+
+  const scaled = await svg2rgba(OFFSET_SQUARE_SVG, {
+    region: { x: 4, y: 4, width: 2, height: 2 },
+    width: 4,
+  });
+  assert(
+    scaled.width === 4 && scaled.height === 4 &&
+      everyPixel(scaled.pixels, isRed),
+    "a scaled region must keep the window and stretch it",
+  );
+
+  const empty = await svg2rgba(OFFSET_SQUARE_SVG, {
+    region: { x: 0, y: 0, width: 2, height: 2 },
+  });
+  assert(
+    everyPixel(empty.pixels, isTransparent),
+    "a region away from the square must be transparent",
+  );
+});
+
+Deno.test("svg2rgba region reveals content outside the viewBox", async () => {
+  const outside =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10"><rect x="100" y="100" width="20" height="20" fill="#ff0000"/></svg>`;
+  const clipped = await svg2rgba(outside);
+  assert(
+    everyPixel(clipped.pixels, isTransparent),
+    "the natural canvas must clip content outside the viewBox",
+  );
+
+  const revealed = await svg2rgba(outside, {
+    region: { x: 100, y: 100, width: 20, height: 20 },
+  });
+  assert(
+    revealed.width === 20 && revealed.height === 20 &&
+      everyPixel(revealed.pixels, isRed),
+    "the region must render the content outside the viewBox",
+  );
+
+  const negative =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect x="-5" y="-5" width="5" height="5" fill="#ff0000"/></svg>`;
+  const negativeRevealed = await svg2rgba(negative, {
+    region: { x: -5, y: -5, width: 5, height: 5 },
+  });
+  assert(
+    everyPixel(negativeRevealed.pixels, isRed),
+    "negative-origin regions must render content at negative canvas coordinates",
+  );
+});
+
+Deno.test("svg2rgba region sizing, baseline identity, and determinism", async () => {
+  const baseline = await svg2rgba(LINE_SVG);
+  const fullRegion = await svg2rgba(LINE_SVG, {
+    region: { x: 0, y: 0, width: 10, height: 10 },
+  });
+  assert(
+    baseline.width === fullRegion.width &&
+      baseline.height === fullRegion.height &&
+      checksum(baseline.pixels) === checksum(fullRegion.pixels),
+    "a full-canvas region must match the no-region output",
+  );
+
+  const cases: Array<
+    [
+      {
+        region: { x: number; y: number; width: number; height: number };
+        width?: number;
+        height?: number;
+      },
+      number,
+      number,
+    ]
+  > = [
+    [{ region: { x: 0, y: 0, width: 5, height: 5 } }, 5, 5],
+    [{ region: { x: 0, y: 0, width: 5, height: 5 }, width: 20 }, 20, 20],
+    [{ region: { x: 0, y: 0, width: 5, height: 5 }, height: 20 }, 20, 20],
+    [
+      { region: { x: 0, y: 0, width: 5, height: 5 }, width: 20, height: 10 },
+      20,
+      10,
+    ],
+  ];
+  for (const [options, w, h] of cases) {
+    const result = await svg2rgba(LINE_SVG, options);
+    assert(
+      result.width === w && result.height === h,
+      `region sizing rule broken for ${
+        JSON.stringify(options)
+      }: expected ${w}x${h}, got ${result.width}x${result.height}`,
+    );
+    assert(
+      result.pixels.length === w * h * 4,
+      "pixels.length must equal width*height*4",
+    );
+  }
+
+  const options = { region: { x: 4, y: 4, width: 2, height: 2 } };
+  const first = await svg2rgba(OFFSET_SQUARE_SVG, options);
+  const second = await svg2rgba(OFFSET_SQUARE_SVG, options);
+  assert(
+    checksum(first.pixels) === checksum(second.pixels),
+    "region renders must be deterministic",
+  );
+  assert(
+    JSON.stringify(options) ===
+      '{"region":{"x":4,"y":4,"width":2,"height":2}}',
+    "the options object must not be mutated",
+  );
+});
+
+Deno.test("svg2rgba rejects invalid regions", async () => {
+  const bad = [
+    { x: 0, y: 0, width: 0, height: 10 },
+    { x: 0, y: 0, width: 10, height: -1 },
+    { x: Number.NaN, y: 0, width: 10, height: 10 },
+    { x: 0, y: 0, width: Number.POSITIVE_INFINITY, height: 10 },
+  ];
+  for (const region of bad) {
+    await assertRejects(
+      svg2rgba(LINE_SVG, { region }),
+      `invalid region must reject: ${JSON.stringify(region)}`,
     );
   }
 });
