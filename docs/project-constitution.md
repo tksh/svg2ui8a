@@ -301,7 +301,10 @@ The following are intentionally deferred:
 - WebP encoding. Same story.
 - A structured-object input accepted by a new function this package would ship.
 - Fonts (see §3.1). BBox was deferred under §3.2 and shipped in `0.4.0` (see
-  `CHANGELOG.md`); per-element lookup and cropping remain out of scope.
+  `CHANGELOG.md`). A raw render-region override (the existing `resvg` render
+  transform, exposed as the `region` option) is authorized for `0.5.0` under
+  `docs/plans/region-support.md`; per-element lookup and `resvg-js`-style
+  `getBBox()`/`cropByBBox()` remain out of scope.
 
 The agent must not implement any of these as part of an `svg2ui8a` task. If the
 human asks for them, the human will create a separate task and a separate plan.
