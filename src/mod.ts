@@ -8,5 +8,5 @@
  * @module
  */
 export { svg2rgba } from "./svg2rgba.ts";
-export type { RgbaResult, Svg2RgbaOptions } from "./svg2rgba.ts";
+export type { RectF, RgbaResult, Svg2RgbaOptions } from "./svg2rgba.ts";
 export { svg2usvg } from "./svg2usvg.ts";
