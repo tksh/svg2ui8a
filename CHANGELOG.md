@@ -1,3 +1,30 @@
+# Unreleased
+
+- **The Wasm binaries are delivered as separate `.wasm` files, not embedded in
+  the JavaScript.** Each capability loads its own binary at runtime instead of
+  carrying a base64 copy of it. The default location is the copy published with
+  the package, resolved relative to the module
+  (`new URL("../assets/svg2rgba_bg.wasm", import.meta.url)`); consumers whose
+  bundler or hosting layout puts the binary elsewhere pass its URL explicitly
+  through the new init functions. The binaries are fetched lazily on first use,
+  and the initialization is cached — the binary is fetched exactly once.
+  (`docs/plans/wasm-file-delivery.md`.)
+
+- **New `initSvg2usvg`, `initSvg2rgba`, and `initSvg2ui8a` functions.**
+  `initSvg2usvg({ wasmUrl })` and `initSvg2rgba({ wasmUrl })` are exported from
+  the capability subpaths;
+  `initSvg2ui8a({ svg2usvgWasmUrl,
+  svg2rgbaWasmUrl })` is exported from the
+  root subpath and initializes both capabilities. Passing a URL after the module
+  has been initialized is an error.
+
+- **Deno consumers need network access for the default Wasm location.** The
+  binary is fetched from the registry on first use, so a Deno consumer of the
+  published package needs `--allow-net` (or `--allow-net=jsr.io`). A consumer
+  that hosts the binary itself can pass its URL to the init function instead.
+  The browser bundle is unaffected: it contains no embedded binary, and no
+  runtime CDN import.
+
 # 0.5.0
 
 - **Render a region of the canvas.** `svg2rgba` gains an optional

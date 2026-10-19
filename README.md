@@ -23,6 +23,9 @@ Each function lives in its own subpath with its own Wasm artifact
 needs pixels loads the rasterizer only; a consumer who only needs normalized SVG
 loads the normalizer only.
 
+The Wasm artifacts are shipped as separate `.wasm` files, not embedded in the
+JavaScript — see [Wasm loading](#wasm-loading) below.
+
 ## Installation / Import
 
 Requires Deno (and a modern browser bundler for browser use). No `npm:`
@@ -37,6 +40,41 @@ import { svg2rgba } from "jsr:@tksh/svg2ui8a/svg2rgba";
 
 // Normalized SVG only — loads only the normalizer Wasm
 import { svg2usvg } from "jsr:@tksh/svg2ui8a/svg2usvg";
+```
+
+## Wasm loading
+
+Each capability loads its own `.wasm` file at runtime, so the binary can be
+cached and served by the application instead of being carried inside the
+JavaScript bundle.
+
+- **Deno (JSR):** the default location is the copy published with the package,
+  resolved relative to the module
+  (`new URL("../assets/svg2rgba_bg.wasm", import.meta.url)`). Nothing to
+  configure — but the binary is fetched over the network on first use, so the
+  consumer needs `--allow-net` (or `--allow-net=jsr.io`).
+- **Browser:** bundlers do not emit the `.wasm` file, so the application serves
+  it and tells the package where it lives:
+
+```ts
+import { initSvg2rgba } from "jsr:@tksh/svg2ui8a/svg2rgba";
+
+await initSvg2rgba({ wasmUrl: "/wasm/svg2rgba_bg.wasm" });
+```
+
+Loading is lazy and cached: the binary is fetched on the first call of the
+capability, and exactly once, no matter how often the capability is used.
+Passing a URL after the module has been initialized is an error.
+
+The root export can initialize both capabilities at once:
+
+```ts
+import { initSvg2ui8a } from "jsr:@tksh/svg2ui8a";
+
+await initSvg2ui8a({
+  svg2usvgWasmUrl: "/wasm/svg2usvg_bg.wasm",
+  svg2rgbaWasmUrl: "/wasm/svg2rgba_bg.wasm",
+});
 ```
 
 ## Quick example
@@ -75,6 +113,11 @@ export function svg2usvg(svg: string): Promise<Uint8Array>;
 // Rejects malformed SVG and <text>/<image> content. Returns UTF-8 bytes
 // of the normalized usvg XML (default XmlOptions, no pretty-print).
 
+export interface Svg2usvgInitOptions {
+  wasmUrl?: string | URL; // defaults to the copy published with the package
+}
+export function initSvg2usvg(options?: Svg2usvgInitOptions): Promise<void>;
+
 // jsr:@tksh/svg2ui8a/svg2rgba
 export interface Svg2RgbaOptions {
   width?: number;
@@ -87,6 +130,11 @@ export function svg2rgba(
   options?: Svg2RgbaOptions,
 ): Promise<RgbaResult>;
 // Rejects malformed SVG and <text>/<image> content.
+
+export interface Svg2rgbaInitOptions {
+  wasmUrl?: string | URL; // defaults to the copy published with the package
+}
+export function initSvg2rgba(options?: Svg2rgbaInitOptions): Promise<void>;
 
 export interface RgbaResult {
   width: number;
@@ -107,6 +155,13 @@ export interface RectF {
   width: number;
   height: number;
 }
+
+// jsr:@tksh/svg2ui8a (root)
+export function initSvg2ui8a(options?: {
+  svg2usvgWasmUrl?: string | URL;
+  svg2rgbaWasmUrl?: string | URL;
+}): Promise<void>;
+// Initializes both capabilities; loads both binaries.
 ```
 
 **Sizing:** both `width` and `height` omitted → natural SVG size rounded to
