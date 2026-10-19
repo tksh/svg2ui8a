@@ -64,7 +64,8 @@ await initSvg2rgba({ wasmUrl: "/wasm/svg2rgba_bg.wasm" });
 
 Loading is lazy and cached: the binary is fetched on the first call of the
 capability, and exactly once, no matter how often the capability is used.
-Passing a URL after the module has been initialized is an error.
+Passing a URL after the module has been initialized is an error. A relative URL
+is resolved against the module, like the default.
 
 The root export can initialize both capabilities at once:
 

@@ -256,7 +256,8 @@ export interface Svg2usvgInitOptions {
    *
    * Defaults to the copy shipped with the package, resolved relative to this
    * module. Consumers whose bundler or hosting layout puts the binary
-   * somewhere else must pass its deployed URL explicitly.
+   * somewhere else must pass its deployed URL explicitly. A relative URL is
+   * resolved against this module, like any other module-relative URL.
    */
   wasmUrl?: string | URL;
 }
@@ -274,7 +275,7 @@ let initPromise: Promise<void> | undefined;
  * Loads the Wasm binary and instantiates the module.
  */
 async function loadWasm(): Promise<void> {
-  const url = wasmUrl ?? new URL(WASM_ASSET, import.meta.url);
+  const url = new URL(wasmUrl ?? WASM_ASSET, import.meta.url);
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(

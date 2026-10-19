@@ -175,7 +175,18 @@ async function main(): Promise<void> {
     );
     console.log(`  ✓ explicit URL: ${wasmUrl} fetched and rendered`);
 
-    // 4. Initialization is cached: further use must not refetch.
+    // 4. A relative URL is resolved against the module, like the default.
+    const relative = await freshInstance<RgbaModule>("svg2rgba.ts");
+    await relative.initSvg2rgba({ wasmUrl: "../assets/svg2rgba_bg.wasm" });
+    const relativeResult = await relative.svg2rgba(SVG);
+    assertBytesEqual(
+      relativeResult.pixels,
+      defaultResult.pixels,
+      "relative URL vs default loading",
+    );
+    console.log("  ✓ relative URL: resolved against the module");
+
+    // 5. Initialization is cached: further use must not refetch.
     await explicit.initSvg2rgba();
     await explicit.initSvg2rgba();
     await explicit.svg2rgba(SVG);
@@ -185,7 +196,7 @@ async function main(): Promise<void> {
     );
     console.log("  ✓ initialization is cached: the binary is fetched once");
 
-    // 5. A missing binary fails with a message that names the URL.
+    // 6. A missing binary fails with a message that names the URL.
     const missing = await freshInstance<RgbaModule>("svg2rgba.ts");
     const missingUrl = `${server.base}/assets/missing_bg.wasm`;
     let missingError: unknown;
@@ -205,7 +216,7 @@ async function main(): Promise<void> {
     );
     console.log(`  ✓ missing binary: rejected with "${missingError.message}"`);
 
-    // 6. The URL cannot be changed after initialization.
+    // 7. The URL cannot be changed after initialization.
     const late = await freshInstance<RgbaModule>("svg2rgba.ts");
     await late.svg2rgba(SVG);
     let lateError: unknown;
@@ -221,7 +232,7 @@ async function main(): Promise<void> {
     );
     console.log(`  ✓ late URL override: rejected with "${lateError.message}"`);
 
-    // 7. The root entry point initializes both capabilities.
+    // 8. The root entry point initializes both capabilities.
     const root = await freshInstance<RootModule>("mod.ts");
     await root.initSvg2ui8a({ svg2rgbaWasmUrl: wasmUrl });
     const rootResult = await root.svg2rgba(SVG);
