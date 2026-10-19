@@ -117,6 +117,23 @@ function assertRectApproxEqual(a: unknown, b: unknown, label: string): void {
   }
 }
 
+/**
+ * The Wasm binaries, served as separate files the way a deployment serves
+ * them. The bundled wrappers resolve them relative to their own URL, so the
+ * page fetches them over HTTP instead of carrying them inline.
+ */
+const WASM_ASSETS: Record<string, Uint8Array> = {
+  "/assets/svg2usvg_bg.wasm": Deno.readFileSync(
+    new URL("../assets/svg2usvg_bg.wasm", import.meta.url),
+  ),
+  "/assets/svg2rgba_bg.wasm": Deno.readFileSync(
+    new URL("../assets/svg2rgba_bg.wasm", import.meta.url),
+  ),
+};
+
+/** Counts how often the page fetched each Wasm binary. */
+const wasmRequests = new Map<string, number>();
+
 async function bundleTsToJs(tsPath: string): Promise<string> {
   const cmd = new Deno.Command("deno", {
     args: ["bundle", tsPath],
@@ -200,6 +217,16 @@ window.__ready = true;
             headers: {
               "content-type": "application/javascript; charset=utf-8",
             },
+          });
+        }
+        const wasm = WASM_ASSETS[url.pathname];
+        if (wasm) {
+          wasmRequests.set(
+            url.pathname,
+            (wasmRequests.get(url.pathname) ?? 0) + 1,
+          );
+          return new Response(new Uint8Array(wasm), {
+            headers: { "content-type": "application/wasm" },
           });
         }
         if (url.pathname === "/" || url.pathname === "/index.html") {
@@ -407,6 +434,15 @@ window.__ready = true;
         } catch { /* ignore */ }
         console.log(`close: ok`);
       }
+    }
+
+    for (const path of Object.keys(WASM_ASSETS)) {
+      const hits = wasmRequests.get(path) ?? 0;
+      assert(
+        hits === 1,
+        `${path}: expected exactly one fetch of the separate .wasm file, got ${hits}`,
+      );
+      console.log(`  ✓ ${path}: fetched once, as a separate file`);
     }
   } finally {
     if (server) {
