@@ -1,11 +1,13 @@
 /**
  * CDN-free check (AGENTS.md §5.2, engineering-playbook §5.2, task.md §5).
  *
- * Bundles each of the package's four subpath entry points (root + three
- * leaves) and greps the
- * output for `https://` / `http://` references on non-comment lines. A match
- * means a runtime CDN import slipped into the browser bundle; the build must
- * abort.
+ * Bundles each of the package's entry points and greps the output for
+ * `https://` / `http://` references on non-comment lines. A match means a
+ * runtime CDN import slipped into the browser bundle; the build must abort.
+ *
+ * The same bundles are checked for an embedded copy of the Wasm binaries.
+ * The package delivers its Wasm as separate `.wasm` files, so a bundle that
+ * carries the bytes inline would silently restore the old delivery model.
  *
  * Comment lines are skipped: `deno bundle` injects provenance comments
  * (`// deno:https://jsr.io/...`) and keeps JSDoc URLs in bundled code, which
@@ -18,6 +20,22 @@
 const ROOT = new URL("../", import.meta.url).pathname;
 
 const RUNTIME_URL = /https?:\/\//;
+
+/**
+ * Base64 fingerprints of the packaged Wasm binaries. 48 bytes encode to
+ * exactly 64 base64 characters, with no padding.
+ */
+const WASM_FINGERPRINTS = ["svg2rgba_bg.wasm", "svg2usvg_bg.wasm"].map((
+  name,
+) => ({
+  name,
+  fingerprint: btoa(
+    String.fromCharCode(
+      ...Deno.readFileSync(new URL(`../assets/${name}`, import.meta.url))
+        .subarray(0, 48),
+    ),
+  ),
+}));
 
 function bundle(entry: string): string {
   const res = new Deno.Command("deno", {
@@ -63,6 +81,14 @@ export function runCheck(): void {
       failed = true;
     } else {
       console.log(`CDN-free check passed for ${entry}`);
+    }
+    for (const { name, fingerprint } of WASM_FINGERPRINTS) {
+      if (output.includes(fingerprint)) {
+        console.error(
+          `CDN-free check FAILED for ${entry}: ${name} is embedded as base64.`,
+        );
+        failed = true;
+      }
     }
   }
   if (failed) {

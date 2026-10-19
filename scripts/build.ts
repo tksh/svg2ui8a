@@ -4,9 +4,11 @@
  *  1. Compiles the two Wasm crates via `wasm-pack --target web`.
  *  2. Copies the Wasm binaries to `assets/`.
  *  3. Regenerates `src/svg2usvg.ts`, `src/svg2rgba.ts`, and `src/mod.ts`
- *     from the wasm-pack glue, embedding the Wasm bytes as base64 and calling
- *     the wasm-bindgen `__wbg_init` with those bytes — no runtime fetch
- *     (`constitution` §3.8, `AGENTS.md` §5.2).
+ *     from the wasm-pack glue. The Wasm bytes are *not* embedded: each
+ *     wrapper loads its binary from a separate `.wasm` file, defaulting to
+ *     the copy shipped in `assets/` (resolved relative to the module) and
+ *     allowing consumers to pass an explicit URL
+ *     (`docs/plans/wasm-file-delivery.md`).
  *  4. Verifies the two artifacts are independent Wasm modules
  *     (`constitution` §3.9, two independently-loadable capabilities).
  *  5. Runs the CDN-free check; aborts the build on failure.
@@ -37,30 +39,6 @@ function run(argv: string[], cwd = ROOT): string {
   return new TextDecoder().decode(res.stdout).trim();
 }
 
-const BASE64_ALPHABET =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-/**
- * Encode bytes as RFC 4648 base64. Implemented by hand rather than with
- * chunked `btoa` calls so the `=` padding appears only at the very end (a
- * chunked encoding emits mid-stream padding that `atob` rejects).
- */
-function base64(bytes: Uint8Array): string {
-  let out = "";
-  for (let i = 0; i < bytes.length; i += 3) {
-    const b0 = bytes[i];
-    const b1 = i + 1 < bytes.length ? bytes[i + 1] : 0;
-    const b2 = i + 2 < bytes.length ? bytes[i + 2] : 0;
-    out += BASE64_ALPHABET[b0 >> 2] +
-      BASE64_ALPHABET[((b0 & 3) << 4) | (b1 >> 4)];
-    out += i + 1 < bytes.length
-      ? BASE64_ALPHABET[((b1 & 15) << 2) | (b2 >> 6)]
-      : "=";
-    out += i + 2 < bytes.length ? BASE64_ALPHABET[b2 & 63] : "=";
-  }
-  return out;
-}
-
 /**
  * Inline wasm-pack glue so the generated wrapper is self-contained: strip the
  * module header and final export line, and apply the given renames so the
@@ -87,6 +65,10 @@ const SVG2USVG_MODULE_DOC = `/**
  * Every payload is a \`Uint8Array\`; the output is UTF-8 encoded standard SVG
  * XML, not a proprietary binary format.
  *
+ * The Wasm binary is not embedded in this module: it is loaded from a
+ * separate \`.wasm\` file on first use. See {@linkcode initSvg2usvg} to load
+ * it from somewhere else.
+ *
  * @module
  */
 
@@ -99,25 +81,106 @@ const SVG2RGBA_MODULE_DOC = `/**
  * and {@linkcode RgbaResult} types. The output is a \`Uint8Array\` of packed,
  * row-major RGBA bytes; this module never encodes PNG, WebP, or JPEG.
  *
+ * The Wasm binary is not embedded in this module: it is loaded from a
+ * separate \`.wasm\` file on first use. See {@linkcode initSvg2rgba} to load
+ * it from somewhere else.
+ *
  * @module
  */
 
 `;
 
-const BASE64_HELPER = `let initialized = false;
+/**
+ * Generate the Wasm-loading half of a capability wrapper: the asset
+ * reference, the cached initialization, and the public init function.
+ *
+ * The binary is fetched instead of embedded so that consumers can host and
+ * cache it themselves. The bytes are read into an `ArrayBuffer` rather than
+ * compiled from a stream, because `WebAssembly.instantiateStreaming` requires
+ * the `application/wasm` content type and the hosting server is out of this
+ * package's control.
+ */
+function generateWasmLoader(capability: string, assetFile: string): string {
+  return `/**
+ * Options for {@linkcode initSvg2${capability}}.
+ */
+export interface Svg2${capability}InitOptions {
+  /**
+   * Location of the \`${assetFile}\` binary to load.
+   *
+   * Defaults to the copy shipped with the package, resolved relative to this
+   * module. Consumers whose bundler or hosting layout puts the binary
+   * somewhere else must pass its deployed URL explicitly.
+   */
+  wasmUrl?: string | URL;
+}
 
-function base64ToBytes(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+/** Location of the Wasm binary, relative to this module. */
+const WASM_ASSET = "../assets/${assetFile}";
+
+/** Explicitly configured Wasm location, if any. */
+let wasmUrl: string | URL | undefined;
+
+/** Cached initialization, so the Wasm module is loaded at most once. */
+let initPromise: Promise<void> | undefined;
+
+/**
+ * Loads the Wasm binary and instantiates the module.
+ */
+async function loadWasm(): Promise<void> {
+  const url = wasmUrl ?? new URL(WASM_ASSET, import.meta.url);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      \`svg2${capability}: failed to fetch the Wasm binary from \${url} \` +
+        \`(HTTP \${response.status})\`,
+    );
   }
-  return bytes;
+  await __wbg_init({
+    module_or_path: new Uint8Array(await response.arrayBuffer()),
+  });
+}
+
+/**
+ * Loads the Wasm binary of this capability, optionally from an explicit URL.
+ *
+ * The call is idempotent: the binary is fetched and instantiated at most
+ * once, and the same promise is returned for every later call. Omitting
+ * \`wasmUrl\` uses the copy shipped with the package. Call this before the
+ * first render whenever the binary is hosted somewhere else.
+ *
+ * @param options Optional Wasm location overrides.
+ * @returns A promise that resolves once the Wasm module is ready.
+ * @throws If the binary cannot be fetched, or if a URL is passed after the
+ * module has already been initialized.
+ *
+ * @example Point the loader at a self-hosted binary
+ * \`\`\`ts
+ * import { initSvg2rgba } from "@tksh/svg2ui8a/svg2rgba";
+ *
+ * await initSvg2rgba({ wasmUrl: "/wasm/svg2rgba_bg.wasm" });
+ * \`\`\`
+ */
+export async function initSvg2${capability}(
+  options?: Svg2${capability}InitOptions,
+): Promise<void> {
+  if (options?.wasmUrl !== undefined) {
+    if (initPromise !== undefined) {
+      throw new Error(
+        \`svg2${capability}: the Wasm module is already initialized; \` +
+          "the Wasm URL must be set before the first render.",
+      );
+    }
+    wasmUrl = options.wasmUrl;
+  }
+  initPromise ??= loadWasm();
+  await initPromise;
 }
 
 `;
+}
 
-function generateSvg2usvgTs(glue: string, wasm: Uint8Array): string {
+function generateSvg2usvgTs(glue: string): string {
   const inlined = inlineGlue(glue, [
     ["export function svg2usvg(svg) {", "function __wasm_svg2usvg(svg) {"],
   ]);
@@ -125,8 +188,7 @@ function generateSvg2usvgTs(glue: string, wasm: Uint8Array): string {
     SVG2USVG_MODULE_DOC +
     inlined +
     "\n" +
-    `const WASM_BASE64 = ${JSON.stringify(base64(wasm))};\n\n` +
-    BASE64_HELPER +
+    generateWasmLoader("usvg", "svg2usvg_bg.wasm") +
     `/**
  * Parses an SVG document and returns its normalized usvg XML as UTF-8 bytes.
  *
@@ -149,16 +211,13 @@ function generateSvg2usvgTs(glue: string, wasm: Uint8Array): string {
  * \`\`\`
  */
 export async function svg2usvg(svg: string): Promise<Uint8Array> {
-  if (!initialized) {
-    await __wbg_init({ module_or_path: base64ToBytes(WASM_BASE64) });
-    initialized = true;
-  }
+  await initSvg2usvg();
   return __wasm_svg2usvg(svg);
 }
 `;
 }
 
-function generateSvg2RgbaTs(glue: string, wasm: Uint8Array): string {
+function generateSvg2RgbaTs(glue: string): string {
   const inlined = inlineGlue(glue, [
     ["RgbaResult", "__wasm_RgbaResult"],
     ["Svg2RgbaOptions", "__wasm_Svg2RgbaOptions"],
@@ -172,7 +231,6 @@ function generateSvg2RgbaTs(glue: string, wasm: Uint8Array): string {
     SVG2RGBA_MODULE_DOC +
     inlined +
     "\n" +
-    `const WASM_BASE64 = ${JSON.stringify(base64(wasm))};\n\n` +
     `/**
  * Options controlling how {@linkcode svg2rgba} rasterizes an SVG.
  */
@@ -250,7 +308,7 @@ export interface RgbaResult {
 }
 
 ` +
-    BASE64_HELPER +
+    generateWasmLoader("rgba", "svg2rgba_bg.wasm") +
     `/**
  * Parses an SVG document and renders it to raw RGBA pixels in one shot.
  *
@@ -279,10 +337,7 @@ export async function svg2rgba(
   svg: string,
   options?: Svg2RgbaOptions,
 ): Promise<RgbaResult> {
-  if (!initialized) {
-    await __wbg_init({ module_or_path: base64ToBytes(WASM_BASE64) });
-    initialized = true;
-  }
+  await initSvg2rgba();
   const opts = new __wasm_Svg2RgbaOptions();
   opts.width = options?.width ?? 0;
   opts.height = options?.height ?? 0;
@@ -348,9 +403,63 @@ function generateModTs(): string {
  *
  * @module
  */
+import { initSvg2rgba } from "./svg2rgba.ts";
+import { initSvg2usvg } from "./svg2usvg.ts";
+
+export { initSvg2rgba } from "./svg2rgba.ts";
 export { svg2rgba } from "./svg2rgba.ts";
-export type { RectF, RgbaResult, Svg2RgbaOptions } from "./svg2rgba.ts";
+export type {
+  RectF,
+  RgbaResult,
+  Svg2rgbaInitOptions,
+  Svg2RgbaOptions,
+} from "./svg2rgba.ts";
+export { initSvg2usvg } from "./svg2usvg.ts";
 export { svg2usvg } from "./svg2usvg.ts";
+export type { Svg2usvgInitOptions } from "./svg2usvg.ts";
+
+/**
+ * Initializes the Wasm modules of both capabilities.
+ *
+ * Each capability loads its own binary; a URL that is omitted falls back to
+ * the copy shipped with the package. Both binaries are loaded by this call,
+ * so applications that use only one capability should prefer the
+ * capability-specific \`initSvg2usvg\` / \`initSvg2rgba\` functions.
+ *
+ * @param options Optional Wasm location overrides, per capability.
+ * @returns A promise that resolves once both Wasm modules are ready.
+ * @throws If a binary cannot be fetched, or if a URL is passed after the
+ * corresponding module has already been initialized.
+ *
+ * @example Point both capabilities at self-hosted binaries
+ * \`\`\`ts
+ * import { initSvg2ui8a } from "@tksh/svg2ui8a";
+ *
+ * await initSvg2ui8a({
+ *   svg2usvgWasmUrl: "/wasm/svg2usvg_bg.wasm",
+ *   svg2rgbaWasmUrl: "/wasm/svg2rgba_bg.wasm",
+ * });
+ * \`\`\`
+ */
+export async function initSvg2ui8a(options?: {
+  /** Location of the \`svg2usvg_bg.wasm\` binary. */
+  svg2usvgWasmUrl?: string | URL;
+  /** Location of the \`svg2rgba_bg.wasm\` binary. */
+  svg2rgbaWasmUrl?: string | URL;
+}): Promise<void> {
+  await Promise.all([
+    initSvg2usvg(
+      options?.svg2usvgWasmUrl === undefined
+        ? undefined
+        : { wasmUrl: options.svg2usvgWasmUrl },
+    ),
+    initSvg2rgba(
+      options?.svg2rgbaWasmUrl === undefined
+        ? undefined
+        : { wasmUrl: options.svg2rgbaWasmUrl },
+    ),
+  ]);
+}
 `;
 }
 
@@ -410,14 +519,12 @@ function main(): void {
     resolve("../src/svg2usvg.ts"),
     generateSvg2usvgTs(
       Deno.readTextFileSync(resolve("../crates/svg2usvg/pkg/svg2usvg.js")),
-      Deno.readFileSync(resolve("../crates/svg2usvg/pkg/svg2usvg_bg.wasm")),
     ),
   );
   Deno.writeTextFileSync(
     resolve("../src/svg2rgba.ts"),
     generateSvg2RgbaTs(
       Deno.readTextFileSync(resolve("../crates/svg2rgba/pkg/svg2rgba.js")),
-      Deno.readFileSync(resolve("../crates/svg2rgba/pkg/svg2rgba_bg.wasm")),
     ),
   );
   Deno.writeTextFileSync(resolve("../src/mod.ts"), generateModTs());
