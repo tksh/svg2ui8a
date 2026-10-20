@@ -19,8 +19,8 @@ Source plan:
 
 ## pfpg migration tasks
 
-- [ ] Copy `.wasm` to static output or configure emission
-- [ ] Initialize with explicit URL if needed
+- [x] Copy `.wasm` to static output or configure emission
+- [x] Initialize with explicit URL if needed
 - [ ] Deno Deploy smoke test of `/ogp/render`
 
 ## Validation
@@ -70,8 +70,29 @@ browsers and Deno.
 
 ### Not done here
 
-The pfpg migration tasks and the Deno Deploy smoke test need a published release
-of this package: pfpg consumes `jsr:@tksh/svg2ui8a@^0.5.0/svg2rgba`, and `0.5.0`
-still embeds the binary. Publishing is done by the human
-(`deno publish --set-version` on a release tag), so the tasks stay open until
-the new version is on JSR.
+The pfpg migration is done (see below); the Deno Deploy smoke test itself is
+not: this environment has no Deno Deploy credentials, so the deployment was
+never pushed. The code path it exercises was verified locally instead — see
+"pfpg migration" below.
+
+## pfpg migration (2026-10-20)
+
+`pfpg-repos/pfpg` now consumes `@tksh/svg2ui8a@^0.6.0` and loads the
+rasterizer's binary from a file it serves itself.
+
+- **The binary is vendored.** `scripts/vendor_svg2ui8a.ts` copies
+  `assets/svg2rgba_bg.wasm` out of the published package (JSR's file server),
+  verifies its sha256, and writes `src/assets/svg2ui8a/` with a provenance file.
+  `deno task vendor:svg2ui8a` refreshes it.
+- **The build serves it.** The new `copy:rasterizer-wasm` task copies
+  `src/assets/svg2ui8a/` to `dist/svg2ui8a/`, and `bulk-copy` calls it.
+- **The browser loads it from our own origin.**
+  `src/js/page-specific/index/svg-to-png.ts` calls
+  `initSvg2rgba({ wasmUrl: new URL("./svg2ui8a/svg2rgba_bg.wasm", location.href) })`
+  before the first render, the same shape as the jsquash encoders.
+- **Deno Deploy loads it from the published package.** `server/ogp-probe.ts`
+  pins `https://jsr.io/@tksh/svg2ui8a/0.6.0/assets/svg2rgba_bg.wasm`: a
+  deployment bundles the module into one file, so the module's own URL cannot
+  point at the binary the way it does in the published package.
+- **The browser bundle shrank** from 1.95 MB to 620 KB: the base64 copy of the
+  binary is gone, and the binary is a separate, cacheable file.
