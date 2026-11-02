@@ -32,7 +32,7 @@ Requires Deno (and a modern browser bundler for browser use). No `npm:`
 specifier is used in the package itself.
 
 ```ts
-// All functions (convenience re-export)
+// Both processing functions (convenience re-export)
 import { svg2rgba, svg2usvg } from "jsr:@tksh/svg2ui8a";
 
 // Pixels only — loads only the rasterizer Wasm
@@ -84,7 +84,8 @@ resolved against the module, like the default.
 Empty or invalid bytes fail initialization instead of falling back to the
 default URL, and a failed initialization is cached rather than retried.
 
-The root export can initialize both capabilities at once:
+The root export can initialize both capabilities at once. It accepts URLs only;
+use the capability initializers when passing `wasmBytes`:
 
 ```ts
 import { initSvg2ui8a } from "jsr:@tksh/svg2ui8a";
