@@ -7,11 +7,16 @@
  *     from the wasm-pack glue. The Wasm bytes are *not* embedded: each
  *     wrapper loads its binary from a separate `.wasm` file, defaulting to
  *     the copy shipped in `assets/` (resolved relative to the module) and
- *     allowing consumers to pass an explicit URL
+ *     allowing consumers to pass an explicit URL or in-memory bytes
  *     (`docs/plans/wasm-file-delivery.md`).
  *  4. Verifies the two artifacts are independent Wasm modules
  *     (`constitution` §3.9, two independently-loadable capabilities).
  *  5. Runs the CDN-free check; aborts the build on failure.
+ *
+ * `--ts-only` regenerates only the three TypeScript wrappers from the existing
+ * `crates/{crate}/pkg` glue and never invokes `wasm-pack` or overwrites
+ * `assets/*.wasm`. `--check` compares the checked-in wrappers with generator
+ * output and fails on drift.
  *
  * wasm-pack 0.15.0 is the recorded toolchain version for this script.
  */
@@ -67,7 +72,7 @@ const SVG2USVG_MODULE_DOC = `/**
  *
  * The Wasm binary is not embedded in this module: it is loaded from a
  * separate \`.wasm\` file on first use. See {@linkcode initSvg2usvg} to load
- * it from somewhere else.
+ * it from a URL or from bytes already in memory.
  *
  * @module
  */
@@ -83,7 +88,7 @@ const SVG2RGBA_MODULE_DOC = `/**
  *
  * The Wasm binary is not embedded in this module: it is loaded from a
  * separate \`.wasm\` file on first use. See {@linkcode initSvg2rgba} to load
- * it from somewhere else.
+ * it from a URL or from bytes already in memory.
  *
  * @module
  */
@@ -112,8 +117,20 @@ export interface Svg2${capability}InitOptions {
    * module. Consumers whose bundler or hosting layout puts the binary
    * somewhere else must pass its deployed URL explicitly. A relative URL is
    * resolved against this module, like any other module-relative URL.
+   *
+   * Mutually exclusive with {@linkcode wasmBytes}.
    */
   wasmUrl?: string | URL;
+  /**
+   * In-memory Wasm binary, loaded without a network request.
+   *
+   * Use this when the application already has the binary, for example after
+   * \`Deno.readFile()\` of a vendored file. The bytes are passed to the Wasm
+   * runtime as-is: they are not copied, and a view with a nonzero
+   * \`byteOffset\` is supported. Mutually exclusive with
+   * {@linkcode wasmUrl}.
+   */
+  wasmBytes?: Uint8Array;
 }
 
 /** Location of the Wasm binary, relative to this module. */
@@ -125,11 +142,42 @@ let wasmUrl: string | URL | undefined;
 /** Cached initialization, so the Wasm module is loaded at most once. */
 let initPromise: Promise<void> | undefined;
 
+/** A source chosen for the one-time initialization. */
+type WasmSource = { url: URL } | { bytes: Uint8Array };
+
+/** Describe an arbitrary thrown value for diagnostics. */
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * Loads the Wasm binary and instantiates the module.
+ *
+ * The bytes are kept in this call frame only; no caller-owned byte array is
+ * retained after the module has been initialized.
  */
-async function loadWasm(): Promise<void> {
-  const url = new URL(wasmUrl ?? WASM_ASSET, import.meta.url);
+async function loadWasm(source: WasmSource): Promise<void> {
+  if ("bytes" in source) {
+    const bytes = source.bytes;
+    if (bytes.length === 0) {
+      throw new Error(
+        \`svg2${capability}: wasmBytes is empty (0 bytes); \` +
+          "pass a valid Wasm binary or omit wasmBytes to use the default URL.",
+      );
+    }
+    try {
+      await __wbg_init({ module_or_path: bytes });
+    } catch (error) {
+      throw new Error(
+        \`svg2${capability}: failed to instantiate the Wasm module from \` +
+          \`wasmBytes (\${bytes.length} bytes): \${describeError(error)}\`,
+        { cause: error },
+      );
+    }
+    return;
+  }
+
+  const url = source.url;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(
@@ -137,23 +185,37 @@ async function loadWasm(): Promise<void> {
         \`(HTTP \${response.status})\`,
     );
   }
-  await __wbg_init({
-    module_or_path: new Uint8Array(await response.arrayBuffer()),
-  });
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  try {
+    await __wbg_init({ module_or_path: bytes });
+  } catch (error) {
+    throw new Error(
+      \`svg2${capability}: failed to instantiate the Wasm binary from \${url} \` +
+        \`(\${bytes.length} bytes): \${describeError(error)}\`,
+      { cause: error },
+    );
+  }
 }
 
 /**
- * Loads the Wasm binary of this capability, optionally from an explicit URL.
+ * Loads the Wasm binary of this capability, from a URL or from bytes.
  *
- * The call is idempotent: the binary is fetched and instantiated at most
- * once, and the same promise is returned for every later call. Omitting
- * \`wasmUrl\` uses the copy shipped with the package. Call this before the
- * first render whenever the binary is hosted somewhere else.
+ * The call is idempotent: the binary is fetched or instantiated at most once,
+ * and the same initialization is awaited for every later call. Omitting both
+ * sources uses the copy shipped with the package. Call this before the first
+ * render whenever the binary is hosted somewhere else or is already in
+ * memory.
  *
- * @param options Optional Wasm location overrides.
+ * \`wasmUrl\` and \`wasmBytes\` are mutually exclusive. Supplying a source after
+ * initialization has begun is an error; the initialization promise is cached
+ * even when it fails, so a failed load is never retried or silently replaced
+ * by the default URL.
+ *
+ * @param options Optional Wasm source overrides.
  * @returns A promise that resolves once the Wasm module is ready.
- * @throws If the binary cannot be fetched, or if a URL is passed after the
- * module has already been initialized.
+ * @throws If both sources are supplied, if a source is supplied after
+ * initialization, if the bytes are empty or invalid, or if the binary cannot
+ * be fetched.
  *
  * @example Point the loader at a self-hosted binary
  * \`\`\`ts
@@ -161,20 +223,58 @@ async function loadWasm(): Promise<void> {
  *
  * await initSvg2rgba({ wasmUrl: "/wasm/svg2rgba_bg.wasm" });
  * \`\`\`
+ *
+ * @example Initialize from bytes already in memory
+ * \`\`\`ts
+ * import { initSvg2rgba } from "@tksh/svg2ui8a/svg2rgba";
+ *
+ * const wasmBytes = await Deno.readFile(
+ *   new URL("./assets/svg2rgba_bg.wasm", import.meta.url),
+ * );
+ * await initSvg2rgba({ wasmBytes });
+ * \`\`\`
  */
 export async function initSvg2${capability}(
   options?: Svg2${capability}InitOptions,
 ): Promise<void> {
-  if (options?.wasmUrl !== undefined) {
-    if (initPromise !== undefined) {
+  const urlProvided = options?.wasmUrl !== undefined;
+  const bytesProvided = options?.wasmBytes !== undefined;
+
+  if (urlProvided && bytesProvided) {
+    throw new Error(
+      \`svg2${capability}: wasmUrl and wasmBytes cannot both be specified; \` +
+        "choose exactly one Wasm source.",
+    );
+  }
+
+  if (initPromise !== undefined) {
+    if (urlProvided || bytesProvided) {
       throw new Error(
         \`svg2${capability}: the Wasm module is already initialized; \` +
-          "the Wasm URL must be set before the first render.",
+          "the Wasm source must be set before the first render.",
       );
     }
-    wasmUrl = options.wasmUrl;
+    await initPromise;
+    return;
   }
-  initPromise ??= loadWasm();
+
+  let source: WasmSource;
+  if (urlProvided) {
+    wasmUrl = options!.wasmUrl;
+    source = { url: new URL(wasmUrl, import.meta.url) };
+  } else if (bytesProvided) {
+    const bytes = options!.wasmBytes!;
+    if (!(bytes instanceof Uint8Array)) {
+      throw new Error(
+        \`svg2${capability}: wasmBytes must be a Uint8Array.\`,
+      );
+    }
+    source = { bytes };
+  } else {
+    source = { url: new URL(WASM_ASSET, import.meta.url) };
+  }
+
+  initPromise = loadWasm(source);
   await initPromise;
 }
 
@@ -492,7 +592,77 @@ function verifyWasmExports(): void {
   console.log("  ✓ two independent Wasm artifacts confirmed");
 }
 
-function main(): void {
+/** Read a wasm-pack glue file, failing with an actionable message when absent. */
+function readGlue(crate: string): string {
+  const path = resolve(`../crates/${crate}/pkg/${crate}.js`);
+  try {
+    return Deno.readTextFileSync(path);
+  } catch (error) {
+    throw new Error(
+      `Missing wasm-pack glue at crates/${crate}/pkg/${crate}.js. ` +
+        "TypeScript-only generation does not run `wasm-pack`; run the full " +
+        "`deno task build` once in a clean checkout first.",
+      { cause: error },
+    );
+  }
+}
+
+/** Build every generated TypeScript file in memory, keyed by repo path. */
+function generateTypeScriptOutputs(): Map<string, string> {
+  return new Map([
+    ["../src/svg2usvg.ts", generateSvg2usvgTs(readGlue("svg2usvg"))],
+    ["../src/svg2rgba.ts", generateSvg2RgbaTs(readGlue("svg2rgba"))],
+    ["../src/mod.ts", generateModTs()],
+  ]);
+}
+
+/** Regenerate the three TypeScript wrappers without touching Wasm binaries. */
+function writeGeneratedTypeScript(): void {
+  const outputs = generateTypeScriptOutputs();
+  for (const [path, contents] of outputs) {
+    Deno.writeTextFileSync(resolve(path), contents);
+  }
+  console.log(
+    "  → wrote src/svg2usvg.ts, src/svg2rgba.ts, src/mod.ts",
+  );
+}
+
+/** Fail when a checked-in generated file differs from generator output. */
+function checkGeneratedTypeScript(): void {
+  const outputs = generateTypeScriptOutputs();
+  const stale: string[] = [];
+  for (const [path, expected] of outputs) {
+    const actual = Deno.readTextFileSync(resolve(path));
+    if (actual !== expected) {
+      stale.push(path.replace("../", ""));
+    }
+  }
+  if (stale.length > 0) {
+    throw new Error(
+      `Generated TypeScript is out of date: ${stale.join(", ")}. ` +
+        "Run `deno task build:ts` to regenerate it.",
+    );
+  }
+  console.log("  ✓ generated TypeScript matches scripts/build.ts");
+}
+
+function main(args: string[]): void {
+  const tsOnly = args.includes("--ts-only");
+  const check = args.includes("--check");
+  if (tsOnly && check) {
+    throw new Error("--ts-only and --check cannot be combined");
+  }
+  if (tsOnly) {
+    console.log("Regenerating TypeScript wrappers...");
+    writeGeneratedTypeScript();
+    console.log("TypeScript-only build complete (Wasm binaries untouched).");
+    return;
+  }
+  if (check) {
+    checkGeneratedTypeScript();
+    return;
+  }
+
   Deno.mkdirSync(ASSETS_DIR, { recursive: true });
 
   console.log(
@@ -516,22 +686,7 @@ function main(): void {
   }
 
   console.log("Regenerating TypeScript wrappers...");
-  Deno.writeTextFileSync(
-    resolve("../src/svg2usvg.ts"),
-    generateSvg2usvgTs(
-      Deno.readTextFileSync(resolve("../crates/svg2usvg/pkg/svg2usvg.js")),
-    ),
-  );
-  Deno.writeTextFileSync(
-    resolve("../src/svg2rgba.ts"),
-    generateSvg2RgbaTs(
-      Deno.readTextFileSync(resolve("../crates/svg2rgba/pkg/svg2rgba.js")),
-    ),
-  );
-  Deno.writeTextFileSync(resolve("../src/mod.ts"), generateModTs());
-  console.log(
-    "  → wrote src/svg2usvg.ts, src/svg2rgba.ts, src/mod.ts",
-  );
+  writeGeneratedTypeScript();
 
   verifyWasmExports();
 
@@ -540,5 +695,5 @@ function main(): void {
 }
 
 if (import.meta.main) {
-  main();
+  main(Deno.args);
 }

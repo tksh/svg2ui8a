@@ -13,7 +13,7 @@
  *
  * The Wasm binary is not embedded in this module: it is loaded from a
  * separate `.wasm` file on first use. See {@linkcode initSvg2usvg} to load
- * it from somewhere else.
+ * it from a URL or from bytes already in memory.
  *
  * @module
  */
@@ -258,8 +258,20 @@ export interface Svg2usvgInitOptions {
    * module. Consumers whose bundler or hosting layout puts the binary
    * somewhere else must pass its deployed URL explicitly. A relative URL is
    * resolved against this module, like any other module-relative URL.
+   *
+   * Mutually exclusive with {@linkcode wasmBytes}.
    */
   wasmUrl?: string | URL;
+  /**
+   * In-memory Wasm binary, loaded without a network request.
+   *
+   * Use this when the application already has the binary, for example after
+   * `Deno.readFile()` of a vendored file. The bytes are passed to the Wasm
+   * runtime as-is: they are not copied, and a view with a nonzero
+   * `byteOffset` is supported. Mutually exclusive with
+   * {@linkcode wasmUrl}.
+   */
+  wasmBytes?: Uint8Array;
 }
 
 /** Location of the Wasm binary, relative to this module. */
@@ -271,11 +283,42 @@ let wasmUrl: string | URL | undefined;
 /** Cached initialization, so the Wasm module is loaded at most once. */
 let initPromise: Promise<void> | undefined;
 
+/** A source chosen for the one-time initialization. */
+type WasmSource = { url: URL } | { bytes: Uint8Array };
+
+/** Describe an arbitrary thrown value for diagnostics. */
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * Loads the Wasm binary and instantiates the module.
+ *
+ * The bytes are kept in this call frame only; no caller-owned byte array is
+ * retained after the module has been initialized.
  */
-async function loadWasm(): Promise<void> {
-  const url = new URL(wasmUrl ?? WASM_ASSET, import.meta.url);
+async function loadWasm(source: WasmSource): Promise<void> {
+  if ("bytes" in source) {
+    const bytes = source.bytes;
+    if (bytes.length === 0) {
+      throw new Error(
+        `svg2usvg: wasmBytes is empty (0 bytes); ` +
+          "pass a valid Wasm binary or omit wasmBytes to use the default URL.",
+      );
+    }
+    try {
+      await __wbg_init({ module_or_path: bytes });
+    } catch (error) {
+      throw new Error(
+        `svg2usvg: failed to instantiate the Wasm module from ` +
+          `wasmBytes (${bytes.length} bytes): ${describeError(error)}`,
+        { cause: error },
+      );
+    }
+    return;
+  }
+
+  const url = source.url;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(
@@ -283,23 +326,37 @@ async function loadWasm(): Promise<void> {
         `(HTTP ${response.status})`,
     );
   }
-  await __wbg_init({
-    module_or_path: new Uint8Array(await response.arrayBuffer()),
-  });
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  try {
+    await __wbg_init({ module_or_path: bytes });
+  } catch (error) {
+    throw new Error(
+      `svg2usvg: failed to instantiate the Wasm binary from ${url} ` +
+        `(${bytes.length} bytes): ${describeError(error)}`,
+      { cause: error },
+    );
+  }
 }
 
 /**
- * Loads the Wasm binary of this capability, optionally from an explicit URL.
+ * Loads the Wasm binary of this capability, from a URL or from bytes.
  *
- * The call is idempotent: the binary is fetched and instantiated at most
- * once, and the same promise is returned for every later call. Omitting
- * `wasmUrl` uses the copy shipped with the package. Call this before the
- * first render whenever the binary is hosted somewhere else.
+ * The call is idempotent: the binary is fetched or instantiated at most once,
+ * and the same initialization is awaited for every later call. Omitting both
+ * sources uses the copy shipped with the package. Call this before the first
+ * render whenever the binary is hosted somewhere else or is already in
+ * memory.
  *
- * @param options Optional Wasm location overrides.
+ * `wasmUrl` and `wasmBytes` are mutually exclusive. Supplying a source after
+ * initialization has begun is an error; the initialization promise is cached
+ * even when it fails, so a failed load is never retried or silently replaced
+ * by the default URL.
+ *
+ * @param options Optional Wasm source overrides.
  * @returns A promise that resolves once the Wasm module is ready.
- * @throws If the binary cannot be fetched, or if a URL is passed after the
- * module has already been initialized.
+ * @throws If both sources are supplied, if a source is supplied after
+ * initialization, if the bytes are empty or invalid, or if the binary cannot
+ * be fetched.
  *
  * @example Point the loader at a self-hosted binary
  * ```ts
@@ -307,20 +364,58 @@ async function loadWasm(): Promise<void> {
  *
  * await initSvg2rgba({ wasmUrl: "/wasm/svg2rgba_bg.wasm" });
  * ```
+ *
+ * @example Initialize from bytes already in memory
+ * ```ts
+ * import { initSvg2rgba } from "@tksh/svg2ui8a/svg2rgba";
+ *
+ * const wasmBytes = await Deno.readFile(
+ *   new URL("./assets/svg2rgba_bg.wasm", import.meta.url),
+ * );
+ * await initSvg2rgba({ wasmBytes });
+ * ```
  */
 export async function initSvg2usvg(
   options?: Svg2usvgInitOptions,
 ): Promise<void> {
-  if (options?.wasmUrl !== undefined) {
-    if (initPromise !== undefined) {
+  const urlProvided = options?.wasmUrl !== undefined;
+  const bytesProvided = options?.wasmBytes !== undefined;
+
+  if (urlProvided && bytesProvided) {
+    throw new Error(
+      `svg2usvg: wasmUrl and wasmBytes cannot both be specified; ` +
+        "choose exactly one Wasm source.",
+    );
+  }
+
+  if (initPromise !== undefined) {
+    if (urlProvided || bytesProvided) {
       throw new Error(
         `svg2usvg: the Wasm module is already initialized; ` +
-          "the Wasm URL must be set before the first render.",
+          "the Wasm source must be set before the first render.",
       );
     }
-    wasmUrl = options.wasmUrl;
+    await initPromise;
+    return;
   }
-  initPromise ??= loadWasm();
+
+  let source: WasmSource;
+  if (urlProvided) {
+    wasmUrl = options!.wasmUrl;
+    source = { url: new URL(wasmUrl, import.meta.url) };
+  } else if (bytesProvided) {
+    const bytes = options!.wasmBytes!;
+    if (!(bytes instanceof Uint8Array)) {
+      throw new Error(
+        `svg2usvg: wasmBytes must be a Uint8Array.`,
+      );
+    }
+    source = { bytes };
+  } else {
+    source = { url: new URL(WASM_ASSET, import.meta.url) };
+  }
+
+  initPromise = loadWasm(source);
   await initPromise;
 }
 
