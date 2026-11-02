@@ -8,7 +8,8 @@
  * Run: `deno task ensure:chrome`  (or `deno run -A scripts/ensure-chrome.ts`)
  * The first run downloads ~100–150 MB to `~/.cache/astral`; subsequent runs
  * reuse the cached binary. Set `ASTRAL_BIN_PATH` to override the binary
- * (see `docs/plans/wasm-browser-tests.md` §7 fallback), not used in §8.2.
+ * (see `svg2ui8a-memo/2026-09-17/wasm-browser-tests.md` §7 fallback), not used
+ * in §8.2.
  */
 
 import {
@@ -31,7 +32,7 @@ if (SUPPORTED_VERSIONS.chrome !== EXPECTED_CHROME) {
       JSON.stringify(SUPPORTED_VERSIONS.chrome)
     } ` +
       `but expected ${JSON.stringify(EXPECTED_CHROME)} — ` +
-      `Astral pin drifted; update docs/plans/wasm-browser-tests.md and this script.`,
+      `Astral pin drifted; update svg2ui8a-memo/2026-09-17/wasm-browser-tests.md and this script.`,
   );
 }
 

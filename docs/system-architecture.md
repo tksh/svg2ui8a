@@ -21,8 +21,7 @@ svg2ui8a/
 ├── README.md
 ├── LICENSE
 ├── Cargo.toml                  # workspace root
-├── jsr.json
-├── deno.json
+├── deno.json                   # package name, exports, and tasks
 ├── .gitignore
 ├── src/
 │   ├── mod.ts
@@ -46,24 +45,32 @@ svg2ui8a/
 │   └── svg2usvg_bg.wasm
 ├── scripts/
 │   ├── build.ts
-│   ├── vendor.ts
-│   └── check-cdn-free.ts
+│   ├── check-cdn-free.ts
+│   ├── ensure-chrome.ts
+│   ├── test-wasm.ts
+│   ├── test-wasm-loading.ts
+│   ├── test-wasm-browser.ts
+│   └── vendor.ts
 ├── tests/                      # Deno integration tests
 ├── docs/
 │   ├── project-constitution.md
 │   ├── system-architecture.md
-│   ├── engineering-playbook.md
-│   └── plans/                  # working artifacts (agent-writable)
-│   └── archive/                # superseded Straightlines/CBOR plans
+│   └── engineering-playbook.md
 └── vendor/                     # gitignored except in release snapshots
 ```
 
-The two Wasm crates are independent artifacts. They each import their own Wasm
-binary, manage their own `init()` flag, and export their own function.
+The two Wasm crates are independent artifacts. They each load their own Wasm
+binary through a cached per-capability initialization promise and export their
+own functions.
+
+Completed plans and archived design documents live in the sibling
+`svg2ui8a-memo` repository under `yyyy-mm-dd/` directories. This package keeps
+only the current governing documents under `docs/`.
 
 Historical note: `0.1.x`–`0.2.0` had a `crates/intermediate` shared crate and
 `svg2stln`/`stln2rgba` Straightlines/CBOR pipeline (`cbor-core`). That pipeline
-was removed in `0.3.0` (see `docs/archive/` and `CHANGELOG.md` `0.3.0`).
+was removed in `0.3.0` (see `svg2ui8a-memo/2026-08-26/` and `CHANGELOG.md`
+`0.3.0`).
 
 ---
 
@@ -81,7 +88,7 @@ The package exposes the following subpaths:
 root import is a convenience for consumers who want both; it does not enable any
 tree-shaking that the subpath imports would not already enable.
 
-`jsr.json` example (illustrative; the implementer fills the specifics):
+`deno.json` carries the package name, subpath exports, and tasks:
 
 ```json
 {
@@ -90,22 +97,20 @@ tree-shaking that the subpath imports would not already enable.
     ".": "./src/mod.ts",
     "./svg2rgba": "./src/svg2rgba.ts",
     "./svg2usvg": "./src/svg2usvg.ts"
-  }
-}
-```
-
-`deno.json` example (illustrative; the implementer fills the specifics):
-
-```json
-{
+  },
   "tasks": {
     "build": "deno run -A scripts/build.ts",
-    "test": "deno task test:rust && deno task test:wasm && deno test -A",
+    "build:ts": "deno run -A scripts/build.ts --ts-only",
+    "check:generated": "deno run -A scripts/build.ts --check",
+    "test": "deno task test:rust && deno task test:wasm && deno task test:wasm:loading && deno task test:wasm:browser && deno test -A",
     "test:rust": "cd crates/svg2usvg && cargo test && cd ../svg2rgba && cargo test",
     "test:wasm": "deno run -A scripts/test-wasm.ts",
+    "test:wasm:loading": "deno run -A --no-lock scripts/test-wasm-loading.ts",
+    "test:wasm:browser": "deno run -A scripts/test-wasm-browser.ts",
+    "ensure:chrome": "deno run -A scripts/ensure-chrome.ts",
     "fmt": "cargo fmt && deno fmt",
     "lint": "deno lint",
-    "check": "deno check src/**/*.ts"
+    "check": "deno task check:generated && deno check src/**/*.ts tests/**/*.ts scripts/*.ts"
   }
 }
 ```
@@ -197,7 +202,7 @@ a DTO or a versioned binary envelope.
 
 Historical note: `0.1.x`–`0.2.0` used a canonical-CBOR envelope with integer
 keys `0`/`1`/`2` and a package-owned DTO (`crates/intermediate`). That envelope
-and DTO were removed in `0.3.0`; the archived plans in `docs/archive/` record
+and DTO were removed in `0.3.0`; the archived plans in `svg2ui8a-memo/` record
 the design and its failure.
 
 ---
@@ -208,10 +213,11 @@ the design and its failure.
 
 A thin Deno/Wasm wrapper that:
 
-- Imports the Wasm binary (the exact import path is decided during impl; see
-  `./docs/engineering-playbook.md` §2 for the build pipeline).
-- Exposes a single async function `svg2usvg(svg: string): Promise<Uint8Array>`.
-- Manages an `initialized` flag for `init()`.
+- Loads the Wasm binary from the default package asset, an explicit URL, or
+  in-memory bytes (see §5.4).
+- Exposes the async function `svg2usvg(svg: string): Promise<Uint8Array>` and
+  the initializer `initSvg2usvg(options?)`.
+- Caches one initialization promise per capability, including a failed one.
 
 The file is template-shaped by `scripts/build.ts`; the agent regenerates it,
 never hand-edits it.
@@ -220,27 +226,38 @@ never hand-edits it.
 
 A thin Deno/Wasm wrapper that:
 
-- Imports the Wasm binary.
-- Exposes a single async function
-  `svg2rgba(svg: string, options?: Svg2RgbaOptions): Promise<RgbaResult>`. The
-  exact shape of the options and the result is fixed by
-  `docs/project-constitution.md` §4.2; the implementer chooses the inner type
-  names and field names.
-- Manages an `initialized` flag for `init()`.
+- Loads the Wasm binary from the default package asset, an explicit URL, or
+  in-memory bytes (see §5.4).
+- Exposes the async function
+  `svg2rgba(svg: string, options?: Svg2RgbaOptions): Promise<RgbaResult>` and
+  the initializer `initSvg2rgba(options?)`. The exact shape of the options and
+  the result is fixed by `docs/project-constitution.md` §4.2; the implementer
+  chooses the inner type names and field names.
+- Caches one initialization promise per capability, including a failed one.
 
 The file is template-shaped by `scripts/build.ts`; the agent regenerates it,
 never hand-edits it.
 
 ### 5.3 `src/mod.ts`
 
-A hand-written re-export module that surfaces the two functions from the root
-subpath. The contents of this file are:
+A generated root module that re-exports both processing functions, their option
+and result types, and the capability initializers. It also provides
+`initSvg2ui8a({ svg2usvgWasmUrl, svg2rgbaWasmUrl })`, which initializes both
+capabilities from URLs. The root helper does not accept `wasmBytes`; callers
+that have bytes use the capability initializers.
 
-```ts
-export { svg2rgba } from "./svg2rgba.ts";
-export type { RgbaResult, Svg2RgbaOptions } from "./svg2rgba.ts";
-export { svg2usvg } from "./svg2usvg.ts";
-```
+### 5.4 Wasm loading
+
+Each capability resolves one Wasm source in this order:
+
+1. The default package asset, relative to the generated module.
+2. An explicit `wasmUrl` supplied to the initializer.
+3. In-memory `wasmBytes`, passed to the Wasm runtime without a fetch.
+
+`wasmUrl` and `wasmBytes` are mutually exclusive. A source supplied after
+initialization is rejected, and the cached initialization promise is preserved
+after a failure. The default URL and `wasmUrl` use `fetch`, so they require
+network permission; `wasmBytes` does not.
 
 ---
 
@@ -307,8 +324,8 @@ export { svg2usvg } from "./svg2usvg.ts";
 - **Wasm binary size, per artifact.** Smaller is better. The plan records the
   chosen dependency set and a rough size estimate per artifact.
 - **Wasm cold-start latency per artifact.** First-call `await init()` cost. The
-  TS wrapper handles this with a single per-module `initialized` flag, which is
-  sufficient.
+  TS wrapper handles this with one cached initialization promise per capability,
+  which is sufficient.
 - **Wasm linear-memory-to-JS-heap copies.** The `memcpy`s at the Wasm boundary.
   There is nothing the agent can do about them short of changing the format
   (which is prohibited from being proprietary).

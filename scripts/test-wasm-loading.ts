@@ -1,5 +1,5 @@
 /**
- * Wasm-loading tests (`docs/plans/wasm-file-delivery.md`).
+ * Wasm-loading tests (`svg2ui8a-memo/2026-10-20/wasm-file-delivery.md`).
  *
  * The package no longer embeds its Wasm binaries: every capability loads a
  * separate `.wasm` file. These tests cover that loading model:

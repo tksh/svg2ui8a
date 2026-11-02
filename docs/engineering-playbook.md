@@ -45,16 +45,20 @@ it**, then ask the human to confirm. They do not block on every small decision.
 
 All commands assume the working directory is the repository root.
 
-| Command               | What it does                                   |
-| --------------------- | ---------------------------------------------- |
-| `cargo fmt`           | Format changed `.rs` files.                    |
-| `deno fmt`            | Format changed `.ts` and `.md` files.          |
-| `deno task lint`      | Lint all `.ts` files.                          |
-| `deno task check`     | Type-check all `.ts` files.                    |
-| `deno task test`      | Run the full test suite (Rust + Wasm + Deno).  |
-| `deno task test:rust` | Run `cargo test` in both crates.               |
-| `deno task test:wasm` | Run the Wasm tests in a headless browser.      |
-| `deno task build`     | Rebuild the two Wasm binaries and the TS glue. |
+| Command                       | What it does                                       |
+| ----------------------------- | -------------------------------------------------- |
+| `cargo fmt`                   | Format changed `.rs` files.                        |
+| `deno fmt`                    | Format changed `.ts` and `.md` files.              |
+| `deno task lint`              | Lint all `.ts` files.                              |
+| `deno task check`             | Check generated TS and type-check all `.ts`.       |
+| `deno task test`              | Run the full test suite (Rust + Wasm + Deno).      |
+| `deno task test:rust`         | Run `cargo test` in both crates.                   |
+| `deno task test:wasm`         | Compare the TS entry points with native core.      |
+| `deno task test:wasm:loading` | Test URL and bytes Wasm loading.                   |
+| `deno task test:wasm:browser` | Run the browser comparison harness.                |
+| `deno task build`             | Rebuild the two Wasm binaries and the TS glue.     |
+| `deno task build:ts`          | Regenerate only the TS wrappers.                   |
+| `deno task check:generated`   | Compare checked-in wrappers with generator output. |
 
 The "do not invent commands" rule from `AGENTS.md` applies to **ad-hoc** shell
 commands. The `test:wasm` and `test:rust` tasks are explicitly called out by
@@ -101,6 +105,11 @@ baseline.
 - `src/svg2rgba.ts`
 - `src/mod.ts`
 
+`deno task build:ts` runs the same TypeScript generation from the existing
+`crates/{crate}/pkg` glue without invoking `wasm-pack` or overwriting
+`assets/*.wasm`. `deno task check:generated` recomputes the wrappers and fails
+when the checked-in files differ.
+
 The `crates/*/pkg/` intermediates may or may not be committed; the implementer
 decides based on what the Wasm-import shape requires. Whatever the choice, the
 `.gitignore` reflects it.
@@ -122,11 +131,11 @@ decides based on what the Wasm-import shape requires. Whatever the choice, the
 
 ## 3. Testing
 
-There are four layers of tests, and they must all pass before declaring a change
-done.
+There are five test commands covering four conceptual layers, and they must all
+pass before declaring a change done.
 
-`deno task test` orchestrates all four: `test:rust` → `test:wasm` →
-`deno test -A`.
+`deno task test` orchestrates all of them: `test:rust` → `test:wasm` →
+`test:wasm:loading` → `test:wasm:browser` → `deno test -A`.
 
 The test layer that follows the **most domain-specific guarantee** is the
 implementation's own; the test layer that follows the **constitution's API
@@ -180,17 +189,19 @@ Required test cases (at minimum):
 
 ### 3.3 Rust Wasm tests (`wasm-pack test` or equivalent)
 
-Run via `deno task test:wasm`. These exercise the Wasm binaries in a headless
-browser, ensuring the JS boundary works as expected. The "or equivalent" in this
-section is fixed to **Astral-driven headless Chrome via CDP**
-(`jsr:@astral/astral@0.5.6`, pinned Chrome `125.0.6400.0`); no chromedriver, no
-WebDriver, no `npm:` package. The Wasm layer is verified in two complementary
-harnesses: the Deno-side `deno task test:wasm` (`scripts/test-wasm.ts`) and the
-browser-side `deno task test:wasm:browser` (`scripts/test-wasm-browser.ts`)
-which loads the shipped `src/svg2usvg.ts` / `src/svg2rgba.ts` inside headless
-Chrome via Astral and asserts the same two guarantees there. See
-`docs/plans/wasm-browser-tests.md` §§2, 7, 12 for the pin, tradeoff, and CI
-notes.
+The Wasm layer is verified by three complementary harnesses:
+
+- `deno task test:wasm` (`scripts/test-wasm.ts`) runs in Deno and compares the
+  shipped TS entry points with the Rust-native `core` output.
+- `deno task test:wasm:loading` (`scripts/test-wasm-loading.ts`) covers the
+  default asset, explicit and relative URLs, bytes initialization, cached
+  failures, and source conflicts.
+- `deno task test:wasm:browser` (`scripts/test-wasm-browser.ts`) loads the
+  shipped wrappers in **Astral-driven headless Chrome via CDP**
+  (`jsr:@astral/astral@0.5.6`, pinned Chrome `125.0.6400.0`); no chromedriver,
+  no WebDriver, no `npm:` package. See
+  `svg2ui8a-memo/2026-09-17/wasm-browser-tests.md` §§2, 7, 12 for the pin,
+  tradeoff, and CI notes.
 
 Required test cases for each Wasm:
 
@@ -198,6 +209,11 @@ Required test cases for each Wasm:
   appropriate.
 - The output is identical to the output of the Rust-native `core` function for
   the same input.
+- The default asset, explicit URL, and relative URL loading paths work.
+- `wasmBytes` initialization performs no fetch and produces the same output as
+  URL initialization.
+- Conflicting sources, a source after initialization, empty bytes, and invalid
+  bytes are rejected; a failed initialization stays cached.
 
 ### 3.4 Deno tests (`deno test`)
 
@@ -219,6 +235,13 @@ Required test cases (at minimum):
 - `init` is idempotent: calling `svg2usvg` twice does not re-initialize; calling
   `svg2rgba` twice does not re-initialize; calling both does not cause
   cross-Wasm `init` interference.
+- Default, explicit-URL, and relative-URL initialization remain supported.
+- `wasmBytes` initialization performs no package-asset fetch and renders the
+  same output as URL initialization.
+- Supplying both sources, supplying a source after initialization, empty bytes,
+  and invalid bytes are rejected with capability-specific diagnostics.
+- A failed initialization is cached and is neither retried nor replaced by the
+  default URL.
 - The same SVG string always produces the same `svg2usvg` bytes and the same
   `svg2rgba` pixels (determinism, from the JS side).
 - A malformed SVG rejects the `svg2usvg` promise.
@@ -263,7 +286,8 @@ The agent must follow this process for any non-trivial change:
 
 1. **Read** `AGENTS.md`, `docs/project-constitution.md`,
    `docs/system-architecture.md`, this file.
-2. **Draft a plan** in `docs/plans/<feature>.md`. The plan must:
+2. **Draft a plan** in `docs/plans/<feature>.md` (create the directory when
+   needed; completed plans move to `svg2ui8a-memo/yyyy-mm-dd/`). The plan must:
    - Quote the section of the constitution that authorizes the change.
    - List the files to be touched, including which of the two crates and which
      Wasm artifacts are affected.
@@ -283,7 +307,7 @@ Adding `./png` (a hypothetical RGBA-to-PNG helper) would be an example of this.
 
 1. Create `crates/rgba2png/`, mirroring the layout of the existing two crates.
 2. Add a build step in `scripts/build.ts` that builds the third crate.
-3. Add `./png` to `jsr.json#exports`.
+3. Add `./png` to `deno.json#exports`.
 4. Add `src/png.ts`, the re-export wrapper.
 5. Add tests for the new subpath in all four layers.
 
@@ -354,12 +378,12 @@ the published version.
 
 The release flow is:
 
-1. Add an entry to `CHANGELOG.md` under the **"Unreleased"** section and update
-   the release notes as appropriate.
+1. Add an entry to `CHANGELOG.md` under the **"Unreleased"** section, then move
+   it to the release version's section before tagging.
 2. Run `deno task build` and commit the regenerated artifacts before the
-   release.
+   release. For wrapper-only changes, run `deno task build:ts` instead.
 3. Create an annotated tag named `v<version>` on the release commit.
-4. Push the tag with `git push --tags`.
+4. Push only that tag with `git push origin v<version>`.
 5. The `.github/workflows/publish.yml` workflow runs for `v*.*.*` tags and
    invokes `deno publish --set-version <version>`, using the tag name without
    the leading `v`.
@@ -376,7 +400,9 @@ publish to JSR, or merge release PRs.
 
 If the agent changes a Rust source file and commits without re-running
 `deno task build`, the published Wasm and the committed TS glue will be out of
-sync. The CI must catch this, but the agent should catch it first.
+sync. If only the loader generator changes, run `deno task build:ts` and keep
+`deno task check:generated` passing. The CI must catch drift, but the agent
+should catch it first.
 
 ### 7.2 Pulling in `resvg` "for convenience" in the `svg2usvg` crate
 
@@ -402,9 +428,10 @@ a specific input is too slow, escalate.
 
 ### 7.6 Adding caching inside the TS wrappers
 
-The TS wrappers must not memoize, must not pre-warm, must not maintain state
-beyond the single `initialized` boolean. The Wasm binaries are cheap to call;
-the consumer is in charge of caching at the policy layer (KV, R2, etc.).
+The TS wrappers must not cache render results, pre-warm, or maintain state
+beyond the chosen Wasm source and the single cached initialization promise per
+capability. The Wasm binaries are cheap to call; the consumer is in charge of
+caching at the policy layer (KV, R2, etc.).
 
 ### 7.7 Adding a runtime CDN import
 

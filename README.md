@@ -1,7 +1,7 @@
 # svg2ui8a
 
 SVG → `Uint8Array` and back: normalized SVG bytes and raw RGBA pixels from Wasm.
-Two functions, two independently loadable Wasm modules.
+Two processing functions, two independently loadable Wasm modules.
 
 [![JSR](https://jsr.io/badges/@tksh/svg2ui8a)](https://jsr.io/@tksh/svg2ui8a)
 
@@ -279,7 +279,7 @@ The `Uint8Array` produced by `svg2usvg` is the UTF-8 encoding of the normalized
 SVG XML produced by `usvg` with default `XmlOptions` (minimal, deterministic).
 It is standard SVG XML, not a proprietary binary format. Historical CBOR
 intermediates (`0.1.x`–`0.2.0`, `cbor-core`) were removed in `0.3.0`; see
-`CHANGELOG.md` `0.3.0` and `docs/archive/`.
+`CHANGELOG.md` `0.3.0` and `svg2ui8a-memo/2026-08-26/cbor-file-intermediate.md`.
 
 ## License
 

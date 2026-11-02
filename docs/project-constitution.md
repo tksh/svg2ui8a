@@ -21,8 +21,8 @@ never produces SVG strings, PNG bytes, JPEG bytes, or other file formats.
 The package name reflects this:
 
 - `svg2ui8a` = "SVG to `Uint8Array`" — both as a function (SVG → `Uint8Array`)
-  and as a value (usvg bytes) and as a return (rgba pixels). The two functions
-  in the package are the two transitions across that boundary.
+  and as a value (usvg bytes) and as a return (rgba pixels). The two processing
+  functions in the package are the two transitions across that boundary.
 - The `ui8a` part is a deliberate shorthand for `Uint8Array`. It is the lingua
   franca of the package.
 
@@ -74,10 +74,10 @@ proprietary binary format.
 - No intermediate payload and no cacheable-bytes contract beyond "same input →
   same pixels".
 
-The two functions are intentionally **separate entry points**. A consumer who
-only wants normalized SVG imports `./svg2usvg` and never loads the rasterizer. A
-consumer who only wants pixels imports `./svg2rgba`. The two Wasm artifacts are
-loaded independently.
+The two processing functions are intentionally **separate entry points**. A
+consumer who only wants normalized SVG imports `./svg2usvg` and never loads the
+rasterizer. A consumer who only wants pixels imports `./svg2rgba`. The two Wasm
+artifacts are loaded independently.
 
 ---
 
@@ -105,9 +105,9 @@ requires an approved plan — do not add it outside a plan.
 Every successful `svg2rgba` call exposes the upstream `usvg` bounding boxes of
 the parsed document root as always-present, nullable metadata (`absBoundingBox`,
 `absStrokeBoundingBox`, `absLayerBoundingBox`; see
-`docs/plans/bbox-support.md`). There is still no `getBBox()`, no `innerBBox()`,
-no `cropByBBox()`. Functions such as `getBBox()` originate from `resvg-js`, not
-from upstream `linebender/resvg`.
+`svg2ui8a-memo/2026-09-18/bbox-support.md`). There is still no `getBBox()`, no
+`innerBBox()`, no `cropByBBox()`. Functions such as `getBBox()` originate from
+`resvg-js`, not from upstream `linebender/resvg`.
 
 BBox support was **postponed**, not permanently forbidden. It was added via
 `usvg` facilities under an approved plan in `0.4.0` (see `CHANGELOG.md`).
@@ -155,8 +155,9 @@ package does not define a proprietary DTO. Earlier versions used a
 canonical-CBOR intermediate (`cbor-core`, envelope with identifier
 `"svg2ui8a/straightlines"`); that format was removed in `0.3.0` because the
 custom representation failed to make cache-hit renders cheaper (see
-`CHANGELOG.md` `0.3.0` and `docs/archive/`). Do not reintroduce a proprietary
-format without an approved plan.
+`CHANGELOG.md` `0.3.0` and
+`svg2ui8a-memo/2026-08-26/cbor-file-intermediate.md`). Do not reintroduce a
+proprietary format without an approved plan.
 
 ### 3.8 No runtime CDN imports in the browser bundle
 
@@ -254,6 +255,34 @@ export function svg2rgba(
   image content, if dimensions are invalid, if the natural size is zero, or if
   Wasm linear memory is exhausted.
 
+### 4.2.1 Wasm initialization
+
+Each capability subpath also exports an initializer:
+
+```ts
+export interface Svg2RgbaInitOptions {
+  wasmUrl?: string | URL;
+  wasmBytes?: Uint8Array;
+}
+export function initSvg2rgba(options?: Svg2RgbaInitOptions): Promise<void>;
+
+export interface Svg2usvgInitOptions {
+  wasmUrl?: string | URL;
+  wasmBytes?: Uint8Array;
+}
+export function initSvg2usvg(options?: Svg2usvgInitOptions): Promise<void>;
+```
+
+The default source is the `.wasm` copy shipped with the package, resolved
+relative to the module. `wasmBytes` initializes from an in-memory `Uint8Array`
+without a network fetch. `wasmUrl` and `wasmBytes` are mutually exclusive; a
+source supplied after initialization is rejected, and a failed initialization is
+cached rather than retried or replaced by the default URL.
+
+The root subpath exports `initSvg2ui8a({ svg2usvgWasmUrl, svg2rgbaWasmUrl })` as
+a convenience for URL-based initialization of both capabilities. It does not
+accept `wasmBytes`; use the capability initializers for in-memory bytes.
+
 ### 4.3 Sizing
 
 If both `width` and `height` are omitted, the natural SVG size is converted to
@@ -303,8 +332,8 @@ The following are intentionally deferred:
 - Fonts (see §3.1). BBox was deferred under §3.2 and shipped in `0.4.0` (see
   `CHANGELOG.md`). A raw render-region override (the existing `resvg` render
   transform, exposed as the `region` option) is authorized for `0.5.0` under
-  `docs/plans/region-support.md`; per-element lookup and `resvg-js`-style
-  `getBBox()`/`cropByBBox()` remain out of scope.
+  `svg2ui8a-memo/2026-09-28/region-support.md`; per-element lookup and
+  `resvg-js`-style `getBBox()`/`cropByBBox()` remain out of scope.
 
 The agent must not implement any of these as part of an `svg2ui8a` task. If the
 human asks for them, the human will create a separate task and a separate plan.
@@ -369,7 +398,8 @@ The following are explicitly _not_ goals of the package, and the agent must not
 be tempted to add them:
 
 - General-purpose SVG manipulation. This is not an SVG editor.
-- A unified "SVG toolkit". This is two functions.
+- A unified "SVG toolkit". This is two processing functions plus their
+  initializers.
 - Drop-in compatibility with `@resvg/resvg-js` or `svg2png-wasm`. Those
   libraries solve different problems; this package solves a smaller one,
   deliberately.
@@ -389,6 +419,6 @@ be tempted to add them:
 cheaper — `usvg::Tree` can only be reconstituted by re-parsing SVG XML, so the
 intermediate's re-serialization round-trip could not bypass the re-parse it was
 designed to avoid. The format and its crates were removed in `0.3.0`; the
-historical plan documents are archived in `docs/archive/`. The current design
-(`svg2usvg` as normalized XML bytes + `svg2rgba` one-shot) replaces it as a
-faithful `resvg` wrapper.
+historical plan documents are archived in `svg2ui8a-memo/` under the relevant
+`yyyy-mm-dd` directories. The current design (`svg2usvg` as normalized XML
+bytes + `svg2rgba` one-shot) replaces it as a faithful `resvg` wrapper.

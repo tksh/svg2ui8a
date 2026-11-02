@@ -8,7 +8,7 @@
  *     wrapper loads its binary from a separate `.wasm` file, defaulting to
  *     the copy shipped in `assets/` (resolved relative to the module) and
  *     allowing consumers to pass an explicit URL or in-memory bytes
- *     (`docs/plans/wasm-file-delivery.md`).
+ *     (`svg2ui8a-memo/2026-10-20/wasm-file-delivery.md`).
  *  4. Verifies the two artifacts are independent Wasm modules
  *     (`constitution` §3.9, two independently-loadable capabilities).
  *  5. Runs the CDN-free check; aborts the build on failure.
