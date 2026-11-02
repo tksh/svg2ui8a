@@ -84,6 +84,13 @@ resolved against the module, like the default.
 Empty or invalid bytes fail initialization instead of falling back to the
 default URL, and a failed initialization is cached rather than retried.
 
+| Initialization case            | Behavior                                                         |
+| ------------------------------ | ---------------------------------------------------------------- |
+| Both `wasmUrl` and `wasmBytes` | Rejects before initialization; the error names both fields.      |
+| A source after initialization  | Rejects; the cached initialization is preserved.                 |
+| Empty `wasmBytes`              | Rejects with the capability name and `0 bytes`; no URL fallback. |
+| Invalid `wasmBytes`            | Rejects with the compilation error as `cause`; no URL fallback.  |
+
 The root export can initialize both capabilities at once. It accepts URLs only;
 use the capability initializers when passing `wasmBytes`:
 
