@@ -62,10 +62,27 @@ import { initSvg2rgba } from "jsr:@tksh/svg2ui8a/svg2rgba";
 await initSvg2rgba({ wasmUrl: "/wasm/svg2rgba_bg.wasm" });
 ```
 
-Loading is lazy and cached: the binary is fetched on the first call of the
-capability, and exactly once, no matter how often the capability is used.
-Passing a URL after the module has been initialized is an error. A relative URL
-is resolved against the module, like the default.
+- **Server with the binary already on disk:** read the vendored file and pass
+  its bytes with `wasmBytes`. This avoids a runtime network fetch and works
+  without `--allow-net`:
+
+```ts
+import { initSvg2rgba } from "jsr:@tksh/svg2ui8a/svg2rgba";
+
+const wasmBytes = await Deno.readFile(
+  new URL("./assets/svg2rgba_bg.wasm", import.meta.url),
+);
+await initSvg2rgba({ wasmBytes });
+```
+
+Loading is lazy and cached: the binary is fetched (or instantiated from bytes)
+on the first call of the capability, and exactly once, no matter how often the
+capability is used. `wasmUrl` and `wasmBytes` are mutually exclusive; passing a
+source after the module has been initialized is an error. A relative URL is
+resolved against the module, like the default.
+
+Empty or invalid bytes fail initialization instead of falling back to the
+default URL, and a failed initialization is cached rather than retried.
 
 The root export can initialize both capabilities at once:
 
@@ -116,6 +133,7 @@ export function svg2usvg(svg: string): Promise<Uint8Array>;
 
 export interface Svg2usvgInitOptions {
   wasmUrl?: string | URL; // defaults to the copy published with the package
+  wasmBytes?: Uint8Array; // in-memory binary; mutually exclusive with wasmUrl
 }
 export function initSvg2usvg(options?: Svg2usvgInitOptions): Promise<void>;
 
@@ -134,6 +152,7 @@ export function svg2rgba(
 
 export interface Svg2rgbaInitOptions {
   wasmUrl?: string | URL; // defaults to the copy published with the package
+  wasmBytes?: Uint8Array; // in-memory binary; mutually exclusive with wasmUrl
 }
 export function initSvg2rgba(options?: Svg2rgbaInitOptions): Promise<void>;
 
@@ -206,6 +225,29 @@ if (first.absStrokeBoundingBox) {
   console.log(revealed.width, revealed.height);
 }
 ```
+
+## Building from source
+
+The full build compiles both Rust crates with `wasm-pack`, copies the binaries
+to `assets/`, and regenerates the TypeScript wrappers:
+
+```sh
+deno task build
+```
+
+`assets/*.wasm` therefore changes only when the Rust or Wasm build changes in
+the same commit. To change only the generated wrappers in `src/svg2usvg.ts`,
+`src/svg2rgba.ts`, and `src/mod.ts` without invoking `wasm-pack`, use the
+TypeScript-only task:
+
+```sh
+deno task build:ts
+deno task check:generated
+```
+
+`build:ts` requires the existing `crates/{crate}/pkg` glue and fails with an
+actionable error when it is absent. `deno task check` runs `check:generated`,
+which fails when a checked-in wrapper differs from the generator output.
 
 ## Design constraints
 

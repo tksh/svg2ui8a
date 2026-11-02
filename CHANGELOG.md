@@ -1,4 +1,17 @@
-# Unreleased
+# 0.6.1
+
+- **Initialize a capability from in-memory bytes.** `initSvg2rgba` and
+  `initSvg2usvg` accept `wasmBytes?: Uint8Array` alongside the existing
+  `wasmUrl`. Bytes are passed to the Wasm runtime without copying and without a
+  network fetch, so a server can initialize from a vendored file
+  (`Deno.readFile()`). `wasmUrl` and `wasmBytes` are mutually exclusive; a
+  source supplied after initialization, empty bytes, and invalid bytes are
+  rejected with a capability-specific diagnostic. A failed initialization is
+  cached and never retried or replaced by the default URL. The existing URL and
+  default loading behavior is unchanged.
+  (`docs/plans/minimal-svg2ui8a-wasm-improvements.md`.)
+
+# 0.6.0
 
 - **The Wasm binaries are delivered as separate `.wasm` files, not embedded in
   the JavaScript.** Each capability loads its own binary at runtime instead of
